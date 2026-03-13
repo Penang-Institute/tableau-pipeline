@@ -1,0 +1,110 @@
+# Google Sheets registry — centralizes all sheet IDs previously scattered across 34 R scripts.
+# Sheet IDs extracted from R source files; each key maps to the Google Sheet ID and tab name.
+
+# Main dashboard workbook (shared across most scripts)
+main_workbook:
+  id: "1cJe-flqOiDEA9Q9MFe2LCIcY8PmmEc_M3mt-TD7eKQM"
+  sheets:
+    cpi_by_state: "CPI_byState"
+    utilisation_by_state: "Utilisation_bystate"
+    utilisation_opendosm: "utilisation_opendosm"
+    utilisation_by_district: "Utilisation_bydistrict"
+    facilities_by_state: "facilities_by_state"
+    population_by_state: "population_by_state"
+
+# Google Drive folder IDs
+drive_folders:
+  cpi: "1z7bgpffHG6fVIpzpLnnLYRPUcMKRv_Yq"
+  gdp_quarterly: "12EuOOIBzkR1jOlDnYU5Jyqm1Ihb2VO3O"
+  population_excel: "1N-qKoZRht_8qdAmaeExb3WKNBuJEnDv1"
+  bed_utilisation: "1-sNb7Pigbcn-QBIgR3cTJwH5btzuKPu1"
+  raw_data_shared_drive: "0ANAL0lJhPAQpUk9PVA"
+
+# -----------------------------------------------------------------------
+# Transform-specific Sheet and Drive IDs (Phase 2+)
+# -----------------------------------------------------------------------
+
+transforms:
+  gender:
+    sheets:
+      salaries: "1xCpNqE8mH3XytvPmbihm0GAaDI7xU6flWl7tob6o_Yk"
+      women_stats: "1TRZEheoDgFm7eXck6-VjZjxd5OfhA_LEb0srYwYFhcs"
+    drive_files:
+      parliament: "1-taYcByjP6ntuYOX1jwoOZ5Qjz5JWAt0"
+
+  graduates:
+    sheets:
+      output: "1nF7xCn68s21QLtG9DTH8ug6jXxQphkec3whz_RcJZ80"
+
+  gross_income:
+    sheets:
+      output: "1i_yrlpJUHG5IUYUJwV7cWj_b2peDn7KJpFA4_kBkcwU"
+      legacy_district: "1azH8hsG3tImspRZGNFsUvukRgB6BjD1EW7vMFdpWTeo"
+    drive_files:
+      expenditure_22: "1l5dr3yJFseB2kzU1JFNZ9z-xxnnHRV98"
+      gross_percap: "1jhvqSsQKxT3t6_v_gL9kisbhHJtz1FZ_"
+      disposable: "1juQV2y5sDV5mv6Naz-ADkbW37ay00LRV"
+      abs_poverty_05: "1QnqgGZONoMOOTfGNLjLC0BCVUZ7z4o66"
+      abs_poverty_16: "1QruCwUT7doEj_way7AzuqB-7m5DssU42"
+
+  labour:
+    sheets:
+      principal: "1u5uqo2mq0TgK91waehOv90R0DCBhLW4O_ld98OSTGNc"
+      lfpr: "1itY9qPWAxZeuVGM_V8mlaY7XWQHYl0-KBFb5A66uOG0"
+      age: "1-0jnCcFG4Gzz_W0YEvR4BOStdrO_6ghXqjXWD9kpK4Y"
+      highest_cert: "1weNYqIWb2DVw7nttBjODbW90Mp6em9iUrVky5TlE_xc"
+      marital: "1BikH6c7i__EcnZ6s5GYnSfJHIYiE3igM_f74fsxYynk"
+      occupation: "1MRgxT5PpICXs2vgIo0AvRw25JYl5VAAlJsmaTqYzJfc"
+      sector: "1toP18iUXNSvhTcuP_uuOu66I7PDdEWrkUNyrQF4--B4"
+      occupation_all_states: "1jWaIChThG98p4qTVRVy2f31U6aIW1K-yxGr1O4dTLuI"
+
+  labour_demographics:
+    sheets:
+      output: "1aU1AEcPuKuc3NmFo2JAs2X84jPfrUxDb9fP0130lzJY"
+
+  population_opendosm:
+    sheets:
+      output: "1iKZnD78AubC--HFKiBsSFSCxQB7l2M15SbNsQW22hUw"
+    drive_files:
+      state_csv: "1BMxNmnlH7lhNn2T2gK3QEpxySXn3uQMF"
+
+  population_ethnicity:
+    sheets:
+      output: "1153Rt9d-evlO_q-FLbPRqX7v-_SGCaJWZmgB2W1cr4E"
+
+  property:
+    sheets:
+      transactions: "1U2myOOIdtLoFnbNkENOvgcvOIXkWfzc6JfGxA7_GuZ8"
+      house_prices: "1NlDArTSUDBGTnJ8H9t6e1AJbdFIQU99dyYTTUW6dWa0"
+      unsold: "1IE2m_JUXVM2CQuXzh0L9eCvPqivr6nQq1Gvmj_0GLkw"
+      newly_launched: "1560AqfA5UJRVa3N5y29su3xDRy9sQxWu0ehA-AktOfA"
+
+  trade:
+    sheets:
+      output: "1zw1vHUE3wkKNEs-A9FZvxfmkXAxxrmSJLuVntxCQ2lc"
+
+  airports:
+    sheets:
+      passengers: "1cLKz_AjEXswmw3RTaXPUeL430yndRJRb51FdVdqIpW4"
+      aircraft: "1Znur74rgQ9irBFVORfqBmWpO2xk0F3BrGGKvDpXVVmc"
+      airport_cargo: "1OP1GPP3RUikBiqQ8OpagZWlJtOPnKUGyItGzs0AgqZA"
+      maritime_cargo: "1XDcfC3QcTSTuoImYU16css6EpMoSekpNAO7zC2VPlKU"
+
+  gdp_econ_activity:
+    sheets:
+      output: "1jSk6_GqU4PawtlE1RtIidSZTH6Fya3eT9bbRJmYu2GQ"
+    drive_files:
+      state_econact: "1lJGrKrHihJ_Mr7HRSlG12OwbZ2WxjKCE"
+      state_total: "1lFgtzcpuTfBzPNvIXJhvN0Qo5kfHckrv"
+      msia_econact: "1lMEMR8Z2Y32DBdj89wXUgWKucoqtZNa2"
+
+  gdp_capita_states:
+    sheets:
+      output: "1Ua9_28dpHeWlea9QfbkYrGSSuBtwL2pXOWobpX8A_1Q"
+    drive_files:
+      state: "1lG6J8-bBxGYeD-pne_7CivjHW0phvxdd"
+      malaysia: "1lL-DXiVODFquAj373iu2t70iKpJCeIzA"
+
+  demo_mukim:
+    sheets:
+      output: "1lhV1_RkPMgZURF0G36Fk_EoaeXfGX7c5QQu-B878wj0"

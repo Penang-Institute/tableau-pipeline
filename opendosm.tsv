@@ -1,0 +1,116 @@
+source1 	source2                                      	destination
+data    	demography/arrivals.csv                      	1. Demography/opendosm
+data    	demography/arrivals_soe.csv                  	1. Demography/opendosm
+data    	demography/births.csv                        	1. Demography/births_and_deaths/
+dosm    	demography/birth.csv                         	1. Demography/births_and_deaths/
+dosm    	demography/birth_state.csv                   	1. Demography/births_and_deaths/
+dosm    	demography/birth_sex_ethnic.csv              	1. Demography/births_and_deaths/
+dosm    	demography/birth_sex_ethnic_state.csv        	1. Demography/births_and_deaths/
+dosm    	demography/stillbirth.csv                    	1. Demography/births_and_deaths/
+dosm    	demography/stillbirth_state.csv              	1. Demography/births_and_deaths/
+dosm    	demography/death_state.csv                   	1. Demography/births_and_deaths/
+dosm    	demography/death_sex_ethnic_state.csv        	1. Demography/births_and_deaths/
+dosm    	demography/death_perinatal_state.csv         	1. Demography/births_and_deaths/
+dosm    	demography/death_neonatal_state.csv          	1. Demography/births_and_deaths/
+dosm    	demography/death_infant_state.csv            	1. Demography/births_and_deaths/
+dosm    	demography/death_toddler_state.csv           	1. Demography/births_and_deaths/
+dosm    	demography/death_maternal_state.csv          	1. Demography/births_and_deaths/
+dosm    	demography/fertility.csv                     	1. Demography/births_and_deaths/
+dosm    	demography/fertility_state.csv               	1. Demography/births_and_deaths/
+dosm    	population/population_malaysia.csv           	2. Population & Migration/population/opendosm/
+dosm    	population/population_state.csv              	2. Population & Migration/population/opendosm/
+dosm    	population/population_district.csv           	2. Population & Migration/population/opendosm/
+dosm    	population/population_parlimen.csv           	2. Population & Migration/population/opendosm/
+dosm    	population/population_dun.csv                	2. Population & Migration/population/opendosm/
+dosm    	ppi/ppi.csv                                  	3. Economy/PPI (DOSM)/Local Production/opendosm/
+dosm    	cpi/cpi_2d.csv                               	3. Economy/CPI/DOSM/opendosm/
+dosm    	cpi/cpi_2d_core.csv                          	3. Economy/CPI/DOSM/opendosm/
+dosm    	cpi/cpi_2d_state.csv                         	3. Economy/CPI/DOSM/opendosm/
+dosm    	cpi/cpi_5d.csv                               	3. Economy/CPI/DOSM/opendosm/
+dosm    	gdp/gdp_lookup.csv                           	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_gni_annual_nominal.csv               	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_gni_annual_real.csv                  	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_annual_nominal_supply.csv            	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_qtr_nominal_supply.csv               	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_annual_nominal_demand.csv            	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_qtr_nominal_demand.csv               	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_annual_nominal_demand_sub.csv        	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_qtr_nominal_demand_sub.csv           	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_annual_real_supply.csv               	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_qtr_real_supply.csv                  	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_annual_real_demand.csv               	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_qtr_real_demand.csv                  	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_annual_real_demand_sub.csv           	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_qtr_real_demand_sub.csv              	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_qtr_real_sa.csv                      	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_qtr_real_sa_supply.csv               	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_qtr_real_sa_demand.csv               	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	gdp/gdp_district_real_supply.csv                 	3. Economy/GDP/DOSM/Malaysia/opendosm/
+dosm    	ipi/ipi.csv                                  	3. Economy/IPI/opendosm/
+dosm    	ipi/ipi_1d.csv                               	3. Economy/IPI/opendosm/
+dosm    	ipi/ipi_2d.csv                               	3. Economy/IPI/opendosm/
+dosm    	ipi/ipi_3d.csv                               	3. Economy/IPI/opendosm/
+dosm    	ipi/ipi_5d.csv                               	3. Economy/IPI/opendosm/
+dosm    	ipi/ipi_export.csv                           	3. Economy/IPI/opendosm/
+dosm    	ipi/ipi_domestic.csv                         	3. Economy/IPI/opendosm/
+data    	finsector/exchangerates.csv                  	3. Economy/exchange rates/opendosm/
+data    	finsector/money_aggregates.csv               	3. Economy/money supply/opendosm/
+data    	finsector/currency_in_circulation.csv        	3. Economy/money supply/opendosm/
+data    	finsector/currency_in_circulation_annual.csv 	3. Economy/money supply/opendosm/
+data    	finsector/interest_rates.csv                 	3. Economy/money supply/opendosm/
+data    	finsector/interest_rates_annual.csv          	3. Economy/money supply/opendosm/
+data    	finsector/money_banking_lookup.csv           	3. Economy/money supply/opendosm/
+data    	transportation/ridership_headline.csv        	9. Transport & Logistics/opendosm/
+data    	transportation/cars_2024.csv                 	9. Transport & Logistics/opendosm/
+data    	healthcare/covid_cases.csv                   	14. Health/kkmnow/
+data    	healthcare/covid_cases_vaxstatus.csv         	14. Health/kkmnow/
+data    	healthcare/covid_cases_age.csv               	14. Health/kkmnow/
+NA	https://raw.githubusercontent.com/MoH-Malaysia/covid19-public/refs/heads/main/epidemic/tests_state.csv	14. Health/kkmnow/
+data    	healthcare/covid_deaths_linelist.csv         	14. Health/kkmnow/
+data    	healthcare/vaxreg_covid.csv                  	14. Health/kkmnow/
+data    	healthcare/vaxreg_covid_demog.csv            	14. Health/kkmnow/
+NA	https://github.com/MoH-Malaysia/covid19-public/raw/refs/heads/main/vaccination/vax_district.csv	14. Health/kkmnow/
+NA	https://github.com/MoH-Malaysia/covid19-public/raw/refs/heads/main/vaccination/vax_state.csv	14. Health/kkmnow/
+data    	healthcare/hospital_bed_utlisation_state.csv 	14. Health/kkmnow/
+data    	healthcare/hospital_beds.csv 	14. Health/kkmnow/
+dosm    	labour/lfs_month.csv                         	15. Labour/Labour Force Survey/timeseries/opendosm/
+dosm    	labour/lfs_month_duration.csv                	15. Labour/Labour Force Survey/timeseries/opendosm/
+dosm    	labour/lfs_month_sa.csv                      	15. Labour/Labour Force Survey/timeseries/opendosm/
+dosm    	labour/lfs_month_status.csv                  	15. Labour/Labour Force Survey/timeseries/opendosm/
+dosm    	labour/lfs_month_youth.csv                   	15. Labour/Labour Force Survey/timeseries/opendosm/
+dosm    	labour/lfs_qtr.csv                           	15. Labour/Labour Force Survey/timeseries/opendosm/
+dosm    	labour/lfs_qtr_sru_age.csv                   	15. Labour/Labour Force Survey/timeseries/opendosm/
+dosm    	labour/lfs_qtr_sru_sex.csv                   	15. Labour/Labour Force Survey/timeseries/opendosm/
+dosm    	labour/lfs_qtr_tru_age.csv                   	15. Labour/Labour Force Survey/timeseries/opendosm/
+dosm    	labour/lfs_qtr_tru_sex.csv                   	15. Labour/Labour Force Survey/timeseries/opendosm/
+dosm    	labour/lfs_qtr_state.csv                     	15. Labour/Labour Force Survey/timeseries/opendosm/
+dosm    	labour/lfs_year.csv                          	15. Labour/Labour Force Survey/timeseries/opendosm/
+data    	publicadmin/federal_finance_qtr.csv          	16. Finance/federal/
+data    	publicadmin/federal_finance_qtr_revenue.csv  	16. Finance/federal/
+data    	publicadmin/federal_finance_qtr_oe.csv       	16. Finance/federal/
+data    	publicadmin/federal_finance_qtr_de.csv       	16. Finance/federal/
+data    	publicadmin/federal_finance_year.csv         	16. Finance/federal/
+data    	publicadmin/federal_finance_year_revenue.csv 	16. Finance/federal/
+data    	publicadmin/federal_finance_year_oe.csv      	16. Finance/federal/
+data    	publicadmin/federal_finance_year_de.csv      	16. Finance/federal/
+data    	publicadmin/federal_finance_lookup.csv       	16. Finance/federal/
+dosm    	hies/hies_malaysia_percentile.csv            	19. Social/Household Income Survey (HIS)/dosm time series/
+dosm    	hies/hies_state.csv                          	19. Social/Household Income Survey (HIS)/dosm time series/
+dosm    	hies/hies_state_percentile.csv               	19. Social/Household Income Survey (HIS)/dosm time series/
+dosm    	hies/hies_district.csv                       	19. Social/Household Income Survey (HIS)/dosm time series/
+dosm    	hies/hh_poverty_state.csv                    	19. Social/Household Income Survey (HIS)/dosm time series/
+dosm    	hies/hh_poverty_district.csv                 	19. Social/Household Income Survey (HIS)/dosm time series/
+dosm    	hies/hh_inequality.csv                       	19. Social/Household Income Survey (HIS)/dosm time series/
+dosm    	iowrt/iowrt.csv                              	21. Services/Distributive Trade/Performance of Wholesale and Retail/opendosm/
+dosm    	iowrt/iowrt_2d.csv                           	21. Services/Distributive Trade/Performance of Wholesale and Retail/opendosm/
+dosm    	iowrt/iowrt_3d.csv                           	21. Services/Distributive Trade/Performance of Wholesale and Retail/opendosm/
+dosm    	dictionaries/msic.csv                        	23. Standards/MSIC/
+dosm    	dictionaries/mcoicop.csv                     	23. Standards/MCOICOP/
+dosm    	dictionaries/sitc.csv                        	23. Standards/trade/SITC/
+dosm    	dictionaries/sitc_sop.csv                    	23. Standards/trade/SITC/
+data    	education/schools_district.csv               	13. Education/opendosm
+data    	education/teachers_district.csv              	13. Education/opendosm
+data    	education/lecturers_uni.csv                  	13. Education/opendosm
+data    	education/enrolment_school_district.csv      	13. Education/opendosm
+data    	education/completion_school_state.csv        	13. Education/opendosm
+

@@ -1,0 +1,28 @@
+# Data source configuration — replaces hardcoded URLs across R scripts.
+# OpenDOSM data catalog: https://open.dosm.gov.my
+
+opendosm:
+  # Base URLs for constructing download paths
+  storage_base:
+    dosm: "https://storage.dosm.gov.my"
+    data: "https://storage.data.gov.my"
+
+  # Parquet files used directly by transform scripts
+  parquet:
+    cpi_2d_state: "https://storage.dosm.gov.my/cpi/cpi_2d_state.parquet"
+    ppi: "https://storage.dosm.gov.my/ppi/ppi.parquet"
+    population_state: "https://storage.dosm.gov.my/population/population_state.parquet"
+    gdp_lookup: "https://storage.dosm.gov.my/gdp/gdp_lookup.parquet"
+    hospital_bed_utilisation: "https://storage.data.gov.my/healthcare/hospital_bed_utlisation_state.parquet"
+
+  # GDP quarterly parquet URL template
+  gdp_quarterly_template: "https://storage.dosm.gov.my/gdp/gdp_qtr_{catalogue_id}.parquet"
+
+github:
+  moh_covid_hospital: "https://raw.githubusercontent.com/MoH-Malaysia/covid19-public/main/epidemic/hospital.csv"
+  moh_bedutil_commits: "/repos/MoH-Malaysia/data-resources-public/commits"
+  moh_bedutil_contents: "/repos/MoH-Malaysia/data-resources-public/contents/bedutil_facility.csv"
+
+# The opendosm.tsv manifest (115 rows) is the authoritative source for bulk downloads.
+# It lives at the repo root and is read directly by copy_opendosm.py.
+manifest: "opendosm.tsv"

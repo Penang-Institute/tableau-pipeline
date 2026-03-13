@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+
+# Service account credentials
+pipeline/config/service_account.json
+
+# Local output
+csv_output/
+output/
+
+# macOS
+.DS_Store
+
+# Data files
+*.csv
+*.parquet
+*.xlsx
+*.xls
+*.pdf
