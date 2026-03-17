@@ -10,6 +10,8 @@ opendosm:
   # Parquet files used directly by transform scripts
   parquet:
     cpi_2d_state: "https://storage.dosm.gov.my/cpi/cpi_2d_state.parquet"
+    cpi_2d: "https://storage.dosm.gov.my/cpi/cpi_2d.parquet"
+    cpi_2d_core: "https://storage.dosm.gov.my/cpi/cpi_2d_core.parquet"
     ppi: "https://storage.dosm.gov.my/ppi/ppi.parquet"
     population_state: "https://storage.dosm.gov.my/population/population_state.parquet"
     gdp_lookup: "https://storage.dosm.gov.my/gdp/gdp_lookup.parquet"

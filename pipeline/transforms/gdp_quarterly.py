@@ -6,6 +6,8 @@ Fetches 6 quarterly GDP parquet files (nominal/real/real_sa × demand/supply),
 combines them with a lookup table for sector descriptions, and uploads
 the result as a CSV to Google Drive.
 
+Output columns: date, code, nominal, real, real_sa, lvl1, lvl2, lvl3,
+               lvl1_desc, lvl2_desc, lvl3_desc, desc
 Output: Google Drive folder → gdp_qtr.csv
 """
 
@@ -23,6 +25,15 @@ logger = logging.getLogger(__name__)
 
 GDP_QTR_TEMPLATE = "https://storage.dosm.gov.my/gdp/gdp_qtr_{catalogue_id}.parquet"
 GDP_LOOKUP_URL = "https://storage.dosm.gov.my/gdp/gdp_lookup.parquet"
+
+# Expenditure sub-codes with no seasonally adjusted data (PDF spec section real_sa)
+REAL_SA_UNAVAILABLE_CODES = frozenset([
+    "e1.1.01", "e1.1.03", "e1.1.04", "e1.1.05", "e1.1.07",
+    "e1.1.08", "e1.1.09", "e1.1.11", "e1.1.12",
+    "e3.1", "e3.1.1", "e3.1.2", "e3.1.3",
+    "e3.2", "e3.2.1", "e3.2.2",
+    "e4", "e5.1", "e5.2", "e6.1", "e6.2",
+])
 
 
 def _build_paths() -> pd.DataFrame:
@@ -54,6 +65,8 @@ def transform() -> pd.DataFrame:
     gdp_lookup = fetch_parquet(GDP_LOOKUP_URL)[["code", "desc_en"]].rename(
         columns={"desc_en": "desc"}
     )
+    # Keep a clean copy for the flat desc column before level lookups modify it
+    flat_desc_lookup = gdp_lookup[["code", "desc"]].copy()
 
     # Fetch all parquet files and combine
     frames = []
@@ -81,6 +94,8 @@ def transform() -> pd.DataFrame:
 
     # Build hierarchical level columns (matches R str_sub logic)
     pivoted["lvl1"] = pivoted["code"].str[:2]
+    # Production codes (p-prefix) have no hierarchy — lvl1 must be NA per spec
+    pivoted.loc[pivoted["code"].str.startswith("p"), "lvl1"] = pd.NA
     pivoted["lvl2"] = pivoted["code"].where(pivoted["code"].str.len() > 2).str[:4]
     pivoted["lvl3"] = pivoted["code"].where(pivoted["code"].str.len() > 4)
 
@@ -99,10 +114,20 @@ def transform() -> pd.DataFrame:
     result = result.merge(lvl2_lookup, on="lvl2", how="left")
     result = result.merge(lvl3_lookup, on="lvl3", how="left")
 
-    # Reorder columns to match R output
-    level_cols = ["lvl1", "lvl1_desc", "lvl2", "lvl2_desc", "lvl3", "lvl3_desc"]
+    # Add flat 'desc' column — direct code-to-description mapping for all codes
+    result = result.merge(flat_desc_lookup, on="code", how="left")
+
+    # Reorder columns to match PDF spec
     series_cols = [c for c in ["nominal", "real", "real_sa"] if c in result.columns]
-    result = result[["date", "code"] + level_cols + series_cols]
+    level_cols = ["lvl1", "lvl2", "lvl3", "lvl1_desc", "lvl2_desc", "lvl3_desc"]
+    result = result[["date", "code"] + series_cols + level_cols + ["desc"]]
+
+    # Set real_sa to NA for codes without seasonally adjusted data (per PDF spec)
+    if "real_sa" in result.columns:
+        result.loc[result["code"].isin(REAL_SA_UNAVAILABLE_CODES), "real_sa"] = pd.NA
+
+    # Format date as dd/mm/yyyy per PDF spec
+    result["date"] = pd.to_datetime(result["date"]).dt.strftime("%d/%m/%Y")
 
     logger.info("GDP quarterly transform: %d rows", len(result))
     return result

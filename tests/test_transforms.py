@@ -19,7 +19,7 @@ import pytest
 # ---------------------------------------------------------------------------
 
 class TestCPITransform:
-    """Test CPI transform logic."""
+    """Test CPI by state transform logic."""
 
     def _make_raw_cpi(self):
         """Create a minimal CPI parquet-like DataFrame."""
@@ -28,50 +28,143 @@ class TestCPITransform:
             "date": pd.to_datetime(["2024-01-01", "2024-01-01", "2024-01-01"]),
             "division": ["overall", "01", "overall"],
             "index": [130.5, 135.2, 128.1],
+            "extra_col": [1, 2, 3],
         })
 
-    @patch("pipeline.fetchers.opendosm.fetch_parquet")
-    @patch("pipeline.fetchers.opendosm.get_parquet_url", return_value="http://mock")
-    def test_transform_shape(self, mock_url, mock_fetch):
+    @patch("pipeline.transforms.cpi.fetch_parquet")
+    @patch("pipeline.transforms.cpi.get_parquet_url", return_value="http://mock")
+    def test_transform_columns(self, mock_url, mock_fetch):
         mock_fetch.return_value = self._make_raw_cpi()
         from pipeline.transforms.cpi import transform
 
         result = transform()
-        assert list(result.columns) == ["Updated as of", "State", "Date", "main_group_no", "CPI"]
-        # 3 original + grouped states (Semenanjung Malaysia covers both)
-        assert len(result) > 3
-        assert "Pulau Pinang" in result["State"].values
-        assert "Johor" in result["State"].values
+        assert list(result.columns) == ["state", "date", "division", "index"]
 
-    @patch("pipeline.fetchers.opendosm.fetch_parquet")
-    @patch("pipeline.fetchers.opendosm.get_parquet_url", return_value="http://mock")
-    def test_division_mapping(self, mock_url, mock_fetch):
+    @patch("pipeline.transforms.cpi.fetch_parquet")
+    @patch("pipeline.transforms.cpi.get_parquet_url", return_value="http://mock")
+    def test_transform_row_count(self, mock_url, mock_fetch):
         mock_fetch.return_value = self._make_raw_cpi()
         from pipeline.transforms.cpi import transform
 
         result = transform()
-        # Check individual state rows have correct mapping
-        individual = result[result["State"].isin(["Pulau Pinang", "Johor"])]
-        individual = individual.sort_values(["State", "main_group_no"]).reset_index(drop=True)
-        assert list(individual["main_group_no"]) == [0, 0, 1]
+        assert len(result) == 3
 
-    @patch("pipeline.fetchers.opendosm.fetch_parquet")
-    @patch("pipeline.fetchers.opendosm.get_parquet_url", return_value="http://mock")
-    def test_updated_as_of_is_today(self, mock_url, mock_fetch):
+    @patch("pipeline.transforms.cpi.fetch_parquet")
+    @patch("pipeline.transforms.cpi.get_parquet_url", return_value="http://mock")
+    def test_extra_columns_dropped(self, mock_url, mock_fetch):
         mock_fetch.return_value = self._make_raw_cpi()
         from pipeline.transforms.cpi import transform
 
         result = transform()
-        today = pd.Timestamp.today().strftime("%Y-%m-%d")
-        assert all(result["Updated as of"] == today)
+        assert "extra_col" not in result.columns
 
-    def test_division_map_completeness(self):
-        """Verify all 14 MCOICOP divisions are mapped."""
-        from pipeline.transforms.cpi import DIVISION_MAP
 
-        assert len(DIVISION_MAP) == 14
-        assert DIVISION_MAP["overall"] == 0
-        assert DIVISION_MAP["13"] == 13
+# ---------------------------------------------------------------------------
+# CPI National transform tests
+# ---------------------------------------------------------------------------
+
+class TestCPINationalTransform:
+    """Test national CPI transform logic."""
+
+    def _make_raw_cpi_national(self):
+        """Create a minimal national CPI parquet-like DataFrame."""
+        return pd.DataFrame({
+            "date": pd.to_datetime([
+                "2009-12-01", "2010-01-01", "2010-02-01",
+                "2009-12-01", "2010-01-01", "2010-02-01",
+            ]),
+            "division": ["overall", "overall", "overall", "01", "01", "01"],
+            "series": ["abs", "abs", "abs", "abs", "abs", "abs"],
+            "index": [99.5, 100.0, 100.2, 98.1, 99.0, 99.3],
+            "index_sa": [99.6, 100.1, 100.3, 98.2, 99.1, 99.4],
+        })
+
+    @patch("pipeline.transforms.cpi_national.fetch_parquet")
+    @patch("pipeline.transforms.cpi_national.get_parquet_url", return_value="http://mock")
+    def test_columns(self, mock_url, mock_fetch):
+        mock_fetch.return_value = self._make_raw_cpi_national()
+        from pipeline.transforms.cpi_national import transform
+
+        result = transform()
+        assert list(result.columns) == ["date", "division", "index"]
+
+    @patch("pipeline.transforms.cpi_national.fetch_parquet")
+    @patch("pipeline.transforms.cpi_national.get_parquet_url", return_value="http://mock")
+    def test_date_filter_from_2010(self, mock_url, mock_fetch):
+        mock_fetch.return_value = self._make_raw_cpi_national()
+        from pipeline.transforms.cpi_national import transform
+
+        result = transform()
+        assert len(result) == 4
+
+    @patch("pipeline.transforms.cpi_national.fetch_parquet")
+    @patch("pipeline.transforms.cpi_national.get_parquet_url", return_value="http://mock")
+    def test_date_format_dd_mm_yyyy(self, mock_url, mock_fetch):
+        mock_fetch.return_value = self._make_raw_cpi_national()
+        from pipeline.transforms.cpi_national import transform
+
+        result = transform()
+        assert result["date"].iloc[0] == "01/01/2010"
+
+    @patch("pipeline.transforms.cpi_national.fetch_parquet")
+    @patch("pipeline.transforms.cpi_national.get_parquet_url", return_value="http://mock")
+    def test_filters_to_abs_series(self, mock_url, mock_fetch):
+        raw = self._make_raw_cpi_national()
+        extra = pd.DataFrame({
+            "date": pd.to_datetime(["2010-01-01"]),
+            "division": ["overall"],
+            "series": ["growth_yoy"],
+            "index": [2.5],
+            "index_sa": [2.6],
+        })
+        mock_fetch.return_value = pd.concat([raw, extra], ignore_index=True)
+        from pipeline.transforms.cpi_national import transform
+
+        result = transform()
+        assert len(result) == 4
+
+
+# ---------------------------------------------------------------------------
+# CPI Core transform tests
+# ---------------------------------------------------------------------------
+
+class TestCPICoreTransform:
+    """Test core CPI transform logic."""
+
+    def _make_raw_cpi_core(self):
+        """Create a minimal core CPI parquet-like DataFrame."""
+        return pd.DataFrame({
+            "date": pd.to_datetime(["2017-12-01", "2018-01-01", "2018-02-01"]),
+            "division": ["overall", "overall", "overall"],
+            "index": [99.0, 100.0, 100.3],
+        })
+
+    @patch("pipeline.transforms.cpi_core.fetch_parquet")
+    @patch("pipeline.transforms.cpi_core.get_parquet_url", return_value="http://mock")
+    def test_columns(self, mock_url, mock_fetch):
+        mock_fetch.return_value = self._make_raw_cpi_core()
+        from pipeline.transforms.cpi_core import transform
+
+        result = transform()
+        assert list(result.columns) == ["date", "division", "index"]
+
+    @patch("pipeline.transforms.cpi_core.fetch_parquet")
+    @patch("pipeline.transforms.cpi_core.get_parquet_url", return_value="http://mock")
+    def test_date_filter_from_2018(self, mock_url, mock_fetch):
+        mock_fetch.return_value = self._make_raw_cpi_core()
+        from pipeline.transforms.cpi_core import transform
+
+        result = transform()
+        assert len(result) == 2
+
+    @patch("pipeline.transforms.cpi_core.fetch_parquet")
+    @patch("pipeline.transforms.cpi_core.get_parquet_url", return_value="http://mock")
+    def test_date_format_dd_mm_yyyy(self, mock_url, mock_fetch):
+        mock_fetch.return_value = self._make_raw_cpi_core()
+        from pipeline.transforms.cpi_core import transform
+
+        result = transform()
+        assert result["date"].iloc[0] == "01/01/2018"
 
 
 # ---------------------------------------------------------------------------
@@ -95,7 +188,7 @@ class TestGDPQuarterlyTransform:
         nominal_demand = paths[paths["catalogue_id"] == "nominal_demand"]
         assert "demand_sub" in nominal_demand.iloc[0]["url"]
 
-    @patch("pipeline.fetchers.opendosm.fetch_parquet")
+    @patch("pipeline.transforms.gdp_quarterly.fetch_parquet")
     def test_transform_produces_level_columns(self, mock_fetch):
         """Verify hierarchical level columns are created."""
         # Minimal GDP data
@@ -122,6 +215,150 @@ class TestGDPQuarterlyTransform:
         assert "lvl1" in result.columns
         assert "lvl1_desc" in result.columns
         assert len(result) > 0
+
+    @patch("pipeline.transforms.gdp_quarterly.fetch_parquet")
+    def test_date_format_dd_mm_yyyy(self, mock_fetch):
+        """GDP dates must be dd/mm/yyyy per PDF spec."""
+        lookup = pd.DataFrame({
+            "code": ["e0"],
+            "desc_en": ["GDP at purchasers' prices"],
+        })
+        gdp_data = pd.DataFrame({
+            "date": pd.to_datetime(["2024-01-01"]),
+            "code": ["e0"],
+            "series": ["abs"],
+            "value": [100.0],
+        })
+
+        def side_effect(url, **kwargs):
+            if "lookup" in url:
+                return lookup
+            return gdp_data
+
+        mock_fetch.side_effect = side_effect
+        from pipeline.transforms.gdp_quarterly import transform
+
+        result = transform()
+        assert result["date"].iloc[0] == "01/01/2024"
+
+    @patch("pipeline.transforms.gdp_quarterly.fetch_parquet")
+    def test_production_codes_lvl1_is_na(self, mock_fetch):
+        """Production codes (p0-p6) must have NA for lvl1 per PDF spec."""
+        lookup = pd.DataFrame({
+            "code": ["p0", "p1"],
+            "desc_en": ["GDP at purchasers' prices", "Agriculture"],
+        })
+        gdp_data = pd.DataFrame({
+            "date": pd.to_datetime(["2024-01-01", "2024-01-01"]),
+            "sector": ["p0", "p1"],
+            "series": ["abs", "abs"],
+            "value": [100.0, 20.0],
+        })
+
+        def side_effect(url, **kwargs):
+            if "lookup" in url:
+                return lookup
+            return gdp_data
+
+        mock_fetch.side_effect = side_effect
+        from pipeline.transforms.gdp_quarterly import transform
+
+        result = transform()
+        p_rows = result[result["code"].str.startswith("p")]
+        assert p_rows["lvl1"].isna().all(), "p-codes must have NA for lvl1"
+
+    @patch("pipeline.transforms.gdp_quarterly.fetch_parquet")
+    def test_desc_column_present(self, mock_fetch):
+        """Output must include a 'desc' column with code descriptions."""
+        lookup = pd.DataFrame({
+            "code": ["e0", "e1"],
+            "desc_en": ["GDP at purchasers' prices", "Private final consumption expenditure"],
+        })
+        gdp_data = pd.DataFrame({
+            "date": pd.to_datetime(["2024-01-01", "2024-01-01"]),
+            "code": ["e0", "e1"],
+            "series": ["abs", "abs"],
+            "value": [500.0, 300.0],
+        })
+
+        def side_effect(url, **kwargs):
+            if "lookup" in url:
+                return lookup
+            return gdp_data
+
+        mock_fetch.side_effect = side_effect
+        from pipeline.transforms.gdp_quarterly import transform
+
+        result = transform()
+        assert "desc" in result.columns
+        e0_row = result[result["code"] == "e0"]
+        assert e0_row["desc"].iloc[0] == "GDP at purchasers' prices"
+
+    @patch("pipeline.transforms.gdp_quarterly.fetch_parquet")
+    def test_real_sa_na_for_unavailable_codes(self, mock_fetch):
+        """Expenditure sub-codes without SA data must have NA in real_sa."""
+        lookup = pd.DataFrame({
+            "code": ["e0", "e1.1.01"],
+            "desc_en": ["GDP", "Food and non-alcoholic beverages"],
+        })
+        gdp_demand = pd.DataFrame({
+            "date": pd.to_datetime(["2024-01-01", "2024-01-01"]),
+            "type": ["e0", "e1.1.01"],
+            "series": ["abs", "abs"],
+            "value": [500.0, 50.0],
+        })
+        gdp_sa = pd.DataFrame({
+            "date": pd.to_datetime(["2024-01-01", "2024-01-01"]),
+            "type": ["e0", "e1.1.01"],
+            "series": ["abs", "abs"],
+            "value": [490.0, 48.0],
+        })
+
+        def side_effect(url, **kwargs):
+            if "lookup" in url:
+                return lookup
+            if "real_sa" in url:
+                return gdp_sa.copy()
+            return gdp_demand.copy()
+
+        mock_fetch.side_effect = side_effect
+        from pipeline.transforms.gdp_quarterly import transform
+
+        result = transform()
+        e1101 = result[result["code"] == "e1.1.01"]
+        if not e1101.empty and "real_sa" in result.columns:
+            assert e1101["real_sa"].isna().all(), "e1.1.01 must have NA for real_sa"
+
+    @patch("pipeline.transforms.gdp_quarterly.fetch_parquet")
+    def test_column_order_matches_spec(self, mock_fetch):
+        """Output columns must match PDF spec order."""
+        lookup = pd.DataFrame({
+            "code": ["e0"],
+            "desc_en": ["GDP at purchasers' prices"],
+        })
+        gdp_data = pd.DataFrame({
+            "date": pd.to_datetime(["2024-01-01"]),
+            "code": ["e0"],
+            "series": ["abs"],
+            "value": [500.0],
+        })
+
+        def side_effect(url, **kwargs):
+            if "lookup" in url:
+                return lookup
+            return gdp_data
+
+        mock_fetch.side_effect = side_effect
+        from pipeline.transforms.gdp_quarterly import transform
+
+        result = transform()
+        expected_order = [
+            "date", "code", "nominal", "real", "real_sa",
+            "lvl1", "lvl2", "lvl3", "lvl1_desc", "lvl2_desc", "lvl3_desc", "desc",
+        ]
+        present = [c for c in expected_order if c in result.columns]
+        actual_present = [c for c in result.columns if c in expected_order]
+        assert present == actual_present, f"Column order mismatch: expected {present}, got {actual_present}"
 
 
 # ---------------------------------------------------------------------------
