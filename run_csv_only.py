@@ -27,6 +27,8 @@ _BASE_OUTPUT_DIR = Path(__file__).parent / "csv_output"
 
 TRANSFORMS = {
     "cpi": "pipeline.transforms.cpi",
+    "cpi_national": "pipeline.transforms.cpi_national",
+    "cpi_core": "pipeline.transforms.cpi_core",
     "ppi": "pipeline.transforms.ppi",
     "gdp_quarterly": "pipeline.transforms.gdp_quarterly",
     "utilisation": "pipeline.transforms.utilisation",
