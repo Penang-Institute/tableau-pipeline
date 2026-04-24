@@ -198,6 +198,7 @@ manually, then change it back.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | Log says `source folder not reachable` | Drive for Desktop not running, or signed out | Open Drive for Desktop from the system tray; sign in with an org account |
+| Log says `source folder not reachable` but `robocopy …/L` from cmd works fine | Drive for Desktop's virtual filesystem didn't respond to the pre-flight check. Fixed in script by using `dir` (forces enumeration) instead of `if not exist` (lazy `GetFileAttributes()` call that can lie against virtual filesystems). | No action — update to the latest script version. Open `H:\Shared drives\Raw Data` once in Explorer to warm the driver cache if it still happens. |
 | Log says `destination folder not reachable` | Laptop is off-LAN (e.g. on a hotspot) | Check Wi-Fi is on the office network; retry |
 | Scheduled run never fires | Laptop sleeping at the scheduled time | Adjust the time, or enable *Wake the computer to run this task* in the trigger |
 | Some files copy every run even when unchanged | Clock drift >2s between systems | Already handled by `/FFT`. If still an issue, check time-sync (`w32tm /resync`) on both ends |

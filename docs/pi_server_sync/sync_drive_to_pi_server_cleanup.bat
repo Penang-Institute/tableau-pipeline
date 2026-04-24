@@ -48,12 +48,17 @@ echo Dest  : %DEST% >> "%LOG%"
 echo Flags : %ROBOFLAGS% >> "%LOG%"
 
 REM Pre-flight: paths reachable?
-if not exist "%SRC%" (
+REM Use `dir` rather than `if not exist` so Drive for Desktop's virtual
+REM filesystem is forced to enumerate the path (GetFileAttributes lies
+REM against that driver; see sync_drive_to_pi_server.bat for details).
+dir "%SRC%" >nul 2>&1
+if errorlevel 1 (
     echo ERROR: source folder not reachable: %SRC% >> "%LOG%"
     echo Is Google Drive for Desktop running and signed in? >> "%LOG%"
     exit /b 2
 )
-if not exist "%DEST%" (
+dir "%DEST%" >nul 2>&1
+if errorlevel 1 (
     echo ERROR: destination folder not reachable: %DEST% >> "%LOG%"
     echo Is the laptop on the office LAN? >> "%LOG%"
     exit /b 3

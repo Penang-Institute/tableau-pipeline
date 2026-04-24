@@ -35,13 +35,19 @@ echo ==== Sync started %date% %time% ==== >> "%LOG%"
 echo Source: %SRC% >> "%LOG%"
 echo Dest  : %DEST% >> "%LOG%"
 
-REM Pre-flight checks -- bail out loudly if the source or dest is missing
-if not exist "%SRC%" (
+REM Pre-flight checks -- bail out loudly if the source or dest is missing.
+REM NOTE: use `dir` instead of `if not exist` because Drive for Desktop
+REM exposes paths via a virtual filesystem. `if not exist` calls
+REM GetFileAttributes() which can falsely report "no such file" against
+REM that driver until the path is enumerated. `dir` forces enumeration.
+dir "%SRC%" >nul 2>&1
+if errorlevel 1 (
     echo ERROR: source folder not reachable: %SRC% >> "%LOG%"
     echo Is Google Drive for Desktop running and signed in? >> "%LOG%"
     exit /b 2
 )
-if not exist "%DEST%" (
+dir "%DEST%" >nul 2>&1
+if errorlevel 1 (
     echo ERROR: destination folder not reachable: %DEST% >> "%LOG%"
     echo Is the laptop on the office LAN? >> "%LOG%"
     exit /b 3
