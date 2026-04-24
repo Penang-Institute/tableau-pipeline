@@ -53,6 +53,14 @@ if errorlevel 1 (
     exit /b 3
 )
 
+REM Objective-evidence pre-check: count files visible on SRC and write to
+REM the log. Gives a quick sanity signal ("does the tree look right?")
+REM and a baseline you can compare across daily runs. A sudden drop in
+REM this number is a red flag even when robocopy itself returns 0.
+set "SRC_FILES=0"
+for /f %%n in ('dir /s /b /a-d "%SRC%" 2^>nul ^| find /c /v ""') do set "SRC_FILES=%%n"
+echo Source file count: %SRC_FILES% >> "%LOG%"
+
 REM Robocopy flags explained:
 REM   /E     = copy all subdirs including empty ones, ADD-ONLY (never
 REM            deletes on dest). Chosen over /MIR so a glitchy Drive
@@ -70,6 +78,22 @@ robocopy "%SRC%" "%DEST%" /E /FFT /R:2 /W:5 /NP /NDL /TEE >> "%LOG%" 2>&1
 
 set RC=%ERRORLEVEL%
 echo ==== Sync finished %date% %time% (robocopy exit=%RC%) ==== >> "%LOG%"
+
+REM Translate the robocopy exit code into a one-line human summary so
+REM the log is glanceable without reading the full robocopy block.
+REM (Robocopy codes are additive bitflags: 1=copied, 2=extras, 4=mismatch,
+REM 8+=failure. 0-7 are all operational success.)
+set "SUMMARY=unknown state"
+if %RC% EQU 0 set "SUMMARY=SUCCESS - no changes needed, DEST already matches SRC"
+if %RC% EQU 1 set "SUMMARY=SUCCESS - new/changed files copied to DEST"
+if %RC% EQU 2 set "SUMMARY=SUCCESS - extras on DEST preserved (expected with /E)"
+if %RC% EQU 3 set "SUMMARY=SUCCESS - files copied + DEST extras preserved"
+if %RC% EQU 4 set "SUMMARY=WARNING - mismatched files present, review log"
+if %RC% EQU 5 set "SUMMARY=WARNING - copied + mismatches, review log"
+if %RC% EQU 6 set "SUMMARY=WARNING - extras + mismatches, review log"
+if %RC% EQU 7 set "SUMMARY=WARNING - copied + extras + mismatches, review log"
+if %RC% GEQ 8 set "SUMMARY=FAILURE - robocopy reported fatal errors, see above"
+echo RESULT: %SUMMARY% (source files seen: %SRC_FILES%, robocopy exit=%RC%) >> "%LOG%"
 
 REM Robocopy exit codes: 0 = no change, 1 = files copied, 2 = extra files,
 REM 3 = 1+2, >=8 = real failure. Treat 0-7 as success for Task Scheduler.

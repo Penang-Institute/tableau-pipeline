@@ -193,6 +193,32 @@ manually, then change it back.
 
 ---
 
+## What a daily log looks like
+
+Each run writes a single file at
+`%USERPROFILE%\Documents\PI_Sync_Logs\sync_YYYY-MM-DD.log`. The three
+lines you want to glance at are:
+
+```
+==== Sync started Fri 24/04/2026 09:15:02.11 ====
+Source file count: 6550
+...
+==== Sync finished Fri 24/04/2026 09:18:47.92 (robocopy exit=3) ====
+RESULT: SUCCESS - files copied + DEST extras preserved (source files seen: 6550, robocopy exit=3)
+```
+
+- **`Source file count`** — objective sanity signal. If this number ever
+  drops sharply compared to previous days, something is wrong with the
+  Shared Drive (signed out, folder renamed, permissions changed).
+- **`RESULT: ...`** — one-line human-readable verdict. Anything starting
+  with `SUCCESS` is operationally fine. `WARNING` means review the log
+  in detail. `FAILURE` means robocopy itself reported fatal errors.
+
+Between those two lines is robocopy's own output — you rarely need it
+unless the RESULT line is not `SUCCESS`.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
