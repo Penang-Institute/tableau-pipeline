@@ -3,7 +3,7 @@ REM =====================================================================
 REM  Sync Google Drive (Shared Drive) -> PI Server (SMB)
 REM
 REM  Runs on a Windows laptop that has BOTH:
-REM    - Google Drive for Desktop mounted at G:\Shared drives\
+REM    - Google Drive for Desktop mounted at H:\Shared drives\
 REM    - LAN access to \\192.168.0.2\e\
 REM
 REM  Replaces the old Philip-Khor workflow. Does not require R, Python,
@@ -13,9 +13,9 @@ REM =====================================================================
 
 REM ---- EDIT THESE TWO PATHS TO MATCH THE LAPTOP ------------------------
 REM  SOURCE: the path Drive for Desktop mirrors the shared drive to.
-REM          Confirm the exact drive name by opening Explorer ->
-REM          "G:\Shared drives\" and seeing what folder appears.
-set "SRC=G:\Shared drives\SESP\Raw Data"
+REM          Confirm the exact drive letter by opening Explorer ->
+REM          "H:\Shared drives\" and seeing what folder appears.
+set "SRC=H:\Shared drives\Raw Data"
 
 REM  DEST: the PI server share path.
 set "DEST=\\192.168.0.2\e\Research\SESP\Database\Raw Data"

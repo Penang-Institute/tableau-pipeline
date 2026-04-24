@@ -18,7 +18,7 @@ REM    2. If the list of deletions looks correct, re-run with CONFIRM.
 REM =====================================================================
 
 REM ---- Keep paths identical to the daily script ------------------------
-set "SRC=G:\Shared drives\SESP\Raw Data"
+set "SRC=H:\Shared drives\Raw Data"
 set "DEST=\\192.168.0.2\e\Research\SESP\Database\Raw Data"
 set "LOGDIR=%USERPROFILE%\Documents\PI_Sync_Cleanup_Logs"
 

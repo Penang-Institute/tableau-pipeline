@@ -14,8 +14,8 @@ which the cloud runner cannot reach.
 ## Pre-flight checklist (ask Hajar to confirm before doing anything)
 
 1. **Google Drive for Desktop installed and signed in?**
-   - Open File Explorer. Is there a `G:\Shared drives\` path with the
-     SESP folder visible inside?
+   - Open File Explorer. Is there an `H:\Shared drives\` path with the
+     `Raw Data` folder visible inside?
    - Which Google account is signed in (system tray → Drive icon → gear)?
      It must be an org account with access to the Shared Drive.
 2. **SMB share reachable?**
@@ -55,7 +55,7 @@ before running cleanup so they aren't mistakenly deleted.
 On the laptop:
 
 ```
-File Explorer → G:\Shared drives\SESP\Raw Data\
+File Explorer → H:\Shared drives\Raw Data\
 ```
 
 Right-click the folder → *Properties*. Confirm the file count is in
@@ -68,13 +68,16 @@ proceeding**.
 From Command Prompt (no script needed, no edits to any file):
 
 ```bat
-robocopy "G:\Shared drives\SESP\Raw Data" "\\192.168.0.2\e\Research\SESP\Database\Raw Data" /E /FFT /L /NP
+robocopy "H:\Shared drives\Raw Data" "\\192.168.0.2\e\Research\SESP\Database\Raw Data" /E /FFT /L /NP /TEE /LOG+:"%USERPROFILE%\Desktop\preview_%DATE:/=-%.log"
 ```
 
-The `/L` flag means *list only, write nothing*. One line per file
-shows what the daily job would copy on its next run. Expected output
-on first run: lots of `New File` lines. On subsequent runs: nearly
-empty output (only changed files).
+The `/L` flag means *list only, write nothing*. `/TEE` echoes output
+to the console **and** appends it to a timestamped log on the Desktop
+(`preview_<today>.log`), so you have a file to review afterwards
+rather than just scrollback.
+
+Expected output on first run: lots of `New File` lines. On subsequent
+runs: nearly empty output (only changed files).
 
 ### Step 4 — Compare both sides via the cleanup dry-run
 
@@ -119,12 +122,13 @@ or in Downloads — Task Scheduler will lose it if the file moves.
 Open the `.bat` file in Notepad and confirm the two paths near the top:
 
 ```bat
-set "SRC=G:\Shared drives\SESP\Raw Data"
+set "SRC=H:\Shared drives\Raw Data"
 set "DEST=\\192.168.0.2\e\Research\SESP\Database\Raw Data"
 ```
 
-- `SRC` — the exact Drive-for-Desktop path. Names vary by drive; open
-  `G:\Shared drives\` in Explorer and copy the real folder name.
+- `SRC` — the exact Drive-for-Desktop path. The drive letter (H: on
+  Hajar's laptop) can vary by machine; open `H:\Shared drives\` in
+  Explorer and copy the real folder name if it differs.
 - `DEST` — keep as-is unless the IT department has moved the share.
 
 ### 3. Test-run manually first
@@ -146,7 +150,7 @@ Open **Task Scheduler** → *Create Basic Task…*
 | Field | Value |
 |---|---|
 | Name | `Sync Drive to PI Server` |
-| Description | Mirrors G:\Shared drives\SESP\Raw Data to \\192.168.0.2\e\… once a day |
+| Description | Mirrors H:\Shared drives\Raw Data to \\192.168.0.2\e\… once a day |
 | Trigger | Daily, 09:15 (or whenever the office PC is reliably awake) |
 | Action | Start a program |
 | Program/script | `C:\Scripts\sync_drive_to_pi_server.bat` |
