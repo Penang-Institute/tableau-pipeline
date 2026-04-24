@@ -25,7 +25,11 @@ set "LOGDIR=%USERPROFILE%\Documents\PI_Sync_Logs"
 REM ---------------------------------------------------------------------
 
 if not exist "%LOGDIR%" mkdir "%LOGDIR%"
-set "LOG=%LOGDIR%\sync_%date:~-4%-%date:~3,2%-%date:~0,2%.log"
+
+REM Locale-safe date stamp via PowerShell (works regardless of Windows
+REM regional date format; %date% parsing breaks under US/EU locales).
+for /f %%a in ('powershell -NoLogo -NoProfile -Command "Get-Date -Format yyyy-MM-dd"') do set "DATESTAMP=%%a"
+set "LOG=%LOGDIR%\sync_%DATESTAMP%.log"
 
 echo ==== Sync started %date% %time% ==== >> "%LOG%"
 echo Source: %SRC% >> "%LOG%"
@@ -44,15 +48,19 @@ if not exist "%DEST%" (
 )
 
 REM Robocopy flags explained:
-REM   /MIR   = mirror (copies new/changed, deletes files in dest that
-REM            no longer exist in src). Drop /MIR -> /E if you want
-REM            "add only, never delete".
+REM   /E     = copy all subdirs including empty ones, ADD-ONLY (never
+REM            deletes on dest). Chosen over /MIR so a glitchy Drive
+REM            sync cannot wipe the PI server. Orphans on dest are
+REM            cleaned up manually or via a separate monthly /MIR run.
+REM   /FFT   = use FAT file times (2-second granularity). Prevents
+REM            robocopy from re-copying unchanged files due to tiny
+REM            NTFS-vs-SMB timestamp drift.
 REM   /R:2   = retry 2 times on a locked/network-blipped file
 REM   /W:5   = wait 5 s between retries
 REM   /NP    = no per-file % progress (keeps the log short)
 REM   /NDL   = no directory listing
 REM   /TEE   = write to console AND log
-robocopy "%SRC%" "%DEST%" /MIR /R:2 /W:5 /NP /NDL /TEE >> "%LOG%" 2>&1
+robocopy "%SRC%" "%DEST%" /E /FFT /R:2 /W:5 /NP /NDL /TEE >> "%LOG%" 2>&1
 
 set RC=%ERRORLEVEL%
 echo ==== Sync finished %date% %time% (robocopy exit=%RC%) ==== >> "%LOG%"
