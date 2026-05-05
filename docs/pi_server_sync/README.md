@@ -86,7 +86,7 @@ sync_drive_to_pi_server_cleanup.bat
 ```
 
 Log lands in
-`%USERPROFILE%\Documents\PI_Sync_Cleanup_Logs\cleanup_DRYRUN_<timestamp>.log`.
+`%PUBLIC%\Documents\PI_Sync_Cleanup_Logs\cleanup_DRYRUN_<timestamp>.log`.
 
 Interpret the lines:
 
@@ -133,12 +133,23 @@ set "DEST=\\192.168.0.2\e\Research\SESP\Database\Raw Data"
 
 ### 3. Test-run manually first
 
-Double-click the `.bat` file. A black console window will open for a
-few seconds. When it closes:
+> **Important: do NOT right-click → "Run as administrator".** Just
+> double-click. The script depends on Drive for Desktop's `H:\` mount,
+> which is per-user. Elevating into a different account (an admin /
+> supervisor account) loses that mount and the script will fail at
+> the pre-flight check. Plain double-click in the regular user session
+> is the correct invocation.
 
-- Check `%USERPROFILE%\Documents\PI_Sync_Logs\sync_YYYY-MM-DD.log`.
-  It should end with `(robocopy exit=0)` through `(robocopy exit=7)`.
-  Exit code ≥ 8 means a real failure — the log will say why.
+Double-click the `.bat` file. A black console window will open for a
+few seconds (or up to several minutes on first run, while ~1.7 GB of
+new files get copied). When it closes:
+
+- Check `%PUBLIC%\Documents\PI_Sync_Logs\sync_YYYY-MM-DD.log`. The very
+  last line should start with `RESULT: SUCCESS …`. Anything starting
+  with `WARNING` or `FAILURE` needs review.
+- Also check `%PUBLIC%\Documents\PI_Sync_Logs\_invocations.log` —
+  every attempted run appends one line here even if the main log was
+  not produced. Useful for diagnosing hangs.
 - Open the destination folder and confirm files appear / update.
 
 Do this at least once before scheduling.
@@ -158,8 +169,15 @@ Open **Task Scheduler** → *Create Basic Task…*
 
 After creating, open the task → *Properties*:
 
-- **General** tab → tick *Run whether user is logged on or not* and
-  *Run with highest privileges*.
+- **General** tab:
+  - Tick *Run only when user is logged on* (NOT "whether user is
+    logged on or not"). Drive for Desktop only mounts `H:\` for an
+    interactively logged-on user, so the task must run in a live
+    session of the operator's account.
+  - **Do NOT tick *Run with highest privileges***. Elevation runs the
+    task under a different security context that has no `H:\` mount —
+    the task will fail at the pre-flight check exactly like a
+    right-click → "Run as administrator" double-click would.
 - **Conditions** tab → untick *Start the task only if the computer is
   on AC power* (safer if the laptop runs on battery sometimes).
 - **Settings** tab → tick *Run task as soon as possible after a
@@ -195,9 +213,20 @@ manually, then change it back.
 
 ## What a daily log looks like
 
-Each run writes a single file at
-`%USERPROFILE%\Documents\PI_Sync_Logs\sync_YYYY-MM-DD.log`. The three
-lines you want to glance at are:
+Logs land in `%PUBLIC%\Documents\PI_Sync_Logs\` — that's
+`C:\Users\Public\Documents\PI_Sync_Logs\` on Hajar's laptop. This
+location is readable by every account on the machine (no admin
+needed), so logs from any run — under her account or an admin
+elevation — are always accessible to her.
+
+Two files live there:
+
+- `_invocations.log` — one line per attempted run, written **before**
+  any external command. If this grows but `sync_<date>.log` doesn't,
+  the script started but choked on something downstream (typically
+  PowerShell/WMIC blocked, or a hung external call).
+- `sync_<date>.log` — the per-day operational log. The three lines you
+  want to glance at are:
 
 ```
 ==== Sync started Fri 24/04/2026 09:15:02.11 ====
@@ -225,6 +254,8 @@ unless the RESULT line is not `SUCCESS`.
 |---|---|---|
 | Log says `source folder not reachable` | Drive for Desktop not running, or signed out | Open Drive for Desktop from the system tray; sign in with an org account |
 | Log says `source folder not reachable` but `robocopy …/L` from cmd works fine | Drive for Desktop's virtual filesystem didn't respond to the pre-flight check. Fixed in script by using `dir` (forces enumeration) instead of `if not exist` (lazy `GetFileAttributes()` call that can lie against virtual filesystems). | No action — update to the latest script version. Open `H:\Shared drives\Raw Data` once in Explorer to warm the driver cache if it still happens. |
+| Double-click opens a blank Command Prompt that hangs forever; no `sync_<date>.log` is produced | The script reached an external command that was blocked or stalled (commonly PowerShell under restrictive Group Policy). Look at `_invocations.log` — if a fresh line appeared there, the script *did* start but choked downstream. The latest script uses WMIC instead of PowerShell to sidestep this; if it still hangs, check whether WMIC itself is blocked by IT policy (`wmic /?` from the same restricted account should print help text). | Verify the operator has the **latest** `.bat` (post-WMIC swap). If WMIC also hangs, escalate to IT to permit either WMIC or PowerShell for the operator's account. |
+| Script "ran fine" only with right-click → Run as administrator; logs end up in admin's profile and the operator can't read them | Elevation runs the script under the admin account, which has no Drive for Desktop `H:\` mount, so the script likely failed silently at pre-flight. With the latest script, all logs land in `%PUBLIC%\Documents\PI_Sync_Logs\` — readable by any account — so you can read the admin run's log too. The very last `RESULT:` line will reveal whether anything was actually copied. | Stop running with admin elevation. Use plain double-click in the operator's normal session. If IT policy blocks unelevated `.bat` execution from `C:\Scripts\`, request a whitelist exception. |
 | Log says `destination folder not reachable` | Laptop is off-LAN (e.g. on a hotspot) | Check Wi-Fi is on the office network; retry |
 | Scheduled run never fires | Laptop sleeping at the scheduled time | Adjust the time, or enable *Wake the computer to run this task* in the trigger |
 | Some files copy every run even when unchanged | Clock drift >2s between systems | Already handled by `/FFT`. If still an issue, check time-sync (`w32tm /resync`) on both ends |
@@ -251,7 +282,7 @@ use `sync_drive_to_pi_server_cleanup.bat`.
    ```
 
    A log appears in
-   `%USERPROFILE%\Documents\PI_Sync_Cleanup_Logs\cleanup_DRYRUN_<timestamp>.log`.
+   `%PUBLIC%\Documents\PI_Sync_Cleanup_Logs\cleanup_DRYRUN_<timestamp>.log`.
    Lines marked `*EXTRA File` are what *would* be deleted from the PI
    server. Read through them.
 

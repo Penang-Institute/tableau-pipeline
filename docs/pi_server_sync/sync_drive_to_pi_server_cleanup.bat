@@ -20,7 +20,11 @@ REM =====================================================================
 REM ---- Keep paths identical to the daily script ------------------------
 set "SRC=H:\Shared drives\Raw Data"
 set "DEST=\\192.168.0.2\e\Research\SESP\Database\Raw Data"
-set "LOGDIR=%USERPROFILE%\Documents\PI_Sync_Cleanup_Logs"
+REM Logs go to %PUBLIC% (C:\Users\Public\) so they are readable by both
+REM the operator's account and any admin account that may have run the
+REM script. Avoids the trap where elevated runs land logs in the admin's
+REM profile, out of reach of the regular user.
+set "LOGDIR=%PUBLIC%\Documents\PI_Sync_Cleanup_Logs"
 
 REM Minimum file count the SRC must contain before we allow a real run.
 REM Guards against Drive-for-Desktop being signed out (showing empty).
@@ -37,9 +41,15 @@ if /i "%~1"=="CONFIRM" (
     set "ROBOFLAGS=/MIR /FFT /L /R:2 /W:5 /NP /NDL /TEE"
 )
 
-if not exist "%LOGDIR%" mkdir "%LOGDIR%"
+if not exist "%LOGDIR%" mkdir "%LOGDIR%" 2>nul
 
-for /f %%a in ('powershell -NoLogo -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HH-mm-ss"') do set "STAMP=%%a"
+REM Locale-safe timestamp via WMIC (no PowerShell dependency, works for
+REM restricted users where PowerShell may be blocked by execution
+REM policy). WMIC LocalDateTime format: YYYYMMDDhhmmss.mmmmmm+TZN
+for /f "skip=1" %%a in ('wmic os get LocalDateTime') do (
+    if not defined DT set "DT=%%a"
+)
+set "STAMP=%DT:~0,4%-%DT:~4,2%-%DT:~6,2%_%DT:~8,2%-%DT:~10,2%-%DT:~12,2%"
 set "LOG=%LOGDIR%\cleanup_%MODE%_%STAMP%.log"
 
 echo ==== Cleanup (%MODE%) started %date% %time% ==== >> "%LOG%"

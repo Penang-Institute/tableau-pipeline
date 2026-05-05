@@ -21,14 +21,31 @@ REM  DEST: the PI server share path.
 set "DEST=\\192.168.0.2\e\Research\SESP\Database\Raw Data"
 
 REM  Where to keep a rolling log of each run (created if missing).
-set "LOGDIR=%USERPROFILE%\Documents\PI_Sync_Logs"
+REM  %PUBLIC% = C:\Users\Public\ — readable AND writable by every account
+REM  on the machine, with or without elevation. Avoids the trap where a
+REM  script run "as administrator" lands its log in the admin's profile,
+REM  out of reach of the regular user.
+set "LOGDIR=%PUBLIC%\Documents\PI_Sync_Logs"
 REM ---------------------------------------------------------------------
 
-if not exist "%LOGDIR%" mkdir "%LOGDIR%"
+if not exist "%LOGDIR%" mkdir "%LOGDIR%" 2>nul
 
-REM Locale-safe date stamp via PowerShell (works regardless of Windows
-REM regional date format; %date% parsing breaks under US/EU locales).
-for /f %%a in ('powershell -NoLogo -NoProfile -Command "Get-Date -Format yyyy-MM-dd"') do set "DATESTAMP=%%a"
+REM Always-on invocation marker: written BEFORE any external command so
+REM that even if a downstream call hangs, we have evidence the script
+REM was invoked, by whom, and whether it was elevated. One line per run
+REM accumulates in _invocations.log (separate from the per-day sync log).
+net session >nul 2>&1
+if errorlevel 1 (set "ELEVATED=no") else (set "ELEVATED=yes")
+echo %date% %time% invoked by %USERNAME% [elevated=%ELEVATED%] >> "%LOGDIR%\_invocations.log"
+
+REM Locale-safe date stamp via WMIC (no PowerShell, no execution-policy
+REM concerns for restricted users). WMIC LocalDateTime format is
+REM YYYYMMDDhhmmss.mmmmmm+TZN -- we slice the first 8 chars into
+REM yyyy-MM-dd. Works for any user account on every supported Windows.
+for /f "skip=1" %%a in ('wmic os get LocalDateTime') do (
+    if not defined DT set "DT=%%a"
+)
+set "DATESTAMP=%DT:~0,4%-%DT:~4,2%-%DT:~6,2%"
 set "LOG=%LOGDIR%\sync_%DATESTAMP%.log"
 
 echo ==== Sync started %date% %time% ==== >> "%LOG%"
