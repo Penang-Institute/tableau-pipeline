@@ -43,13 +43,20 @@ if /i "%~1"=="CONFIRM" (
 
 if not exist "%LOGDIR%" mkdir "%LOGDIR%" 2>nul
 
-REM Locale-safe timestamp via WMIC (no PowerShell dependency, works for
-REM restricted users where PowerShell may be blocked by execution
-REM policy). WMIC LocalDateTime format: YYYYMMDDhhmmss.mmmmmm+TZN
-for /f "skip=1" %%a in ('wmic os get LocalDateTime') do (
-    if not defined DT set "DT=%%a"
-)
-set "STAMP=%DT:~0,4%-%DT:~4,2%-%DT:~6,2%_%DT:~8,2%-%DT:~10,2%-%DT:~12,2%"
+REM Timestamp using only built-in cmd parsing -- no PowerShell, no WMIC.
+REM PowerShell can be blocked by ExecutionPolicy on managed laptops;
+REM WMIC was deprecated in Windows 11 22H2 and removed as a default
+REM feature in 24H2, where it hangs silently with no output. %DATE% and
+REM %TIME% are available to every account on every supported Windows.
+REM Locale-dependent but unique per second, sufficient to disambiguate
+REM cleanup runs. Example on en-GB locale: date "Fri 08/05/2026" + time
+REM " 10:04:32.11" -> "Fri_08-05-2026__10-04-32_11".
+set "STAMP=%DATE%_%TIME%"
+set "STAMP=%STAMP:/=-%"
+set "STAMP=%STAMP::=-%"
+set "STAMP=%STAMP: =_%"
+set "STAMP=%STAMP:.=_%"
+set "STAMP=%STAMP:,=_%"
 set "LOG=%LOGDIR%\cleanup_%MODE%_%STAMP%.log"
 
 echo ==== Cleanup (%MODE%) started %date% %time% ==== >> "%LOG%"

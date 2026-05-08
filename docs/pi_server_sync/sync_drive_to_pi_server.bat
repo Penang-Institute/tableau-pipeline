@@ -38,14 +38,17 @@ net session >nul 2>&1
 if errorlevel 1 (set "ELEVATED=no") else (set "ELEVATED=yes")
 echo %date% %time% invoked by %USERNAME% [elevated=%ELEVATED%] >> "%LOGDIR%\_invocations.log"
 
-REM Locale-safe date stamp via WMIC (no PowerShell, no execution-policy
-REM concerns for restricted users). WMIC LocalDateTime format is
-REM YYYYMMDDhhmmss.mmmmmm+TZN -- we slice the first 8 chars into
-REM yyyy-MM-dd. Works for any user account on every supported Windows.
-for /f "skip=1" %%a in ('wmic os get LocalDateTime') do (
-    if not defined DT set "DT=%%a"
-)
-set "DATESTAMP=%DT:~0,4%-%DT:~4,2%-%DT:~6,2%"
+REM Date stamp using only built-in cmd parsing -- no PowerShell, no WMIC.
+REM Both have failure modes on managed laptops: PowerShell can be blocked
+REM by ExecutionPolicy=Restricted for non-admin users; WMIC was deprecated
+REM in Windows 11 22H2 and removed as a default feature in 24H2, where it
+REM hangs silently with no output. Plain %DATE% is locale-dependent but
+REM is available to every account on every supported Windows. We normalise
+REM slashes and spaces so the result is a valid filename component.
+REM Example on en-GB locale: "Fri 08/05/2026" -> "Fri_08-05-2026".
+set "DATESTAMP=%DATE%"
+set "DATESTAMP=%DATESTAMP:/=-%"
+set "DATESTAMP=%DATESTAMP: =_%"
 set "LOG=%LOGDIR%\sync_%DATESTAMP%.log"
 
 echo ==== Sync started %date% %time% ==== >> "%LOG%"
