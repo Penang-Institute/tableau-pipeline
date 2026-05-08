@@ -32,13 +32,21 @@ REM Tune upward if the Raw Data folder is known to have many more files.
 set "MIN_FILES=50"
 REM ---------------------------------------------------------------------
 
+REM /XF excludes Google Drive shortcut files (.gdoc, .gsheet, etc.). These
+REM are 180-byte JSON pointers with special attributes that the SMB
+REM destination cannot accept -- robocopy returns "Incorrect function"
+REM and exits with a failure code. They are also useless on the PI
+REM server because the link only resolves from a Drive-aware client.
+REM See sync_drive_to_pi_server.bat for the longer rationale.
+set "GDRIVE_XF=*.gdoc *.gsheet *.gslides *.gform *.gdraw *.gmap *.glnk *.glink"
+
 if /i "%~1"=="CONFIRM" (
     set "MODE=REAL"
-    set "ROBOFLAGS=/MIR /FFT /R:2 /W:5 /NP /NDL /TEE"
+    set "ROBOFLAGS=/MIR /FFT /R:2 /W:5 /NP /NDL /TEE /XF %GDRIVE_XF%"
 ) else (
     set "MODE=DRYRUN"
     REM /L = list only, no changes. /MIR still reports what would delete.
-    set "ROBOFLAGS=/MIR /FFT /L /R:2 /W:5 /NP /NDL /TEE"
+    set "ROBOFLAGS=/MIR /FFT /L /R:2 /W:5 /NP /NDL /TEE /XF %GDRIVE_XF%"
 )
 
 if not exist "%LOGDIR%" mkdir "%LOGDIR%" 2>nul
