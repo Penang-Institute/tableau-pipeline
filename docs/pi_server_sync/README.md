@@ -201,6 +201,15 @@ not just when the file is double-clicked interactively.
   the Shared Drive are **kept** on the PI server (because `/E`, not
   `/MIR`). This is deliberate — it protects against a signed-out or
   glitchy Drive client wiping the server.
+- **Does not:** copy Google Drive shortcut files — `.gdoc`, `.gsheet`,
+  `.gslides`, `.gform`, `.gdraw`, `.gmap`, `.glnk`, `.glink`. These are
+  180-byte JSON pointers to online Google Workspace documents, not real
+  files. Robocopy cannot replicate their special Drive-only filesystem
+  attributes to the SMB destination (it returns `Incorrect function`),
+  and even if it could, the pointer only resolves from a Drive-aware
+  client — they would be dead weight on the PI server. The script
+  excludes them via `/XF`. Real `.xlsx`/`.csv`/`.pdf` counterparts
+  alongside the shortcuts (where they exist) copy normally.
 - **Does not:** fetch anything from OpenDOSM. That is still the Python
   pipeline's job, which runs every Monday on GitHub Actions.
 - **Does not:** touch Google Sheets or Tableau workbooks. Separate
@@ -247,6 +256,27 @@ RESULT: SUCCESS - files copied + DEST extras preserved (source files seen: 6550,
 Between those two lines is robocopy's own output — you rarely need it
 unless the RESULT line is not `SUCCESS`.
 
+### What you should see on the console (interactive runs)
+
+When the operator double-clicks the script, the console window shows
+three timestamped status lines while the run progresses:
+
+```
+[10:35:27.55] Starting sync as philip.khor (elevated=no)...
+[10:35:35.10] Pre-flight OK (6550 source files). Starting robocopy (5-15 min on first run, seconds afterwards)...
+[robocopy file lines stream here via /TEE during the run]
+[11:10:38.19] SUCCESS - files copied + DEST extras preserved
+```
+
+These echoes exist purely to show the operator the script is alive.
+Without them, the cmd window stays blank for the first 30–60 seconds
+(because all internal echoes are redirected to the log file), which
+historically looked indistinguishable from a hang and triggered
+"close it and re-run" panic — leading to multiple concurrent robocopy
+processes and self-inflicted file-lock contention. Under Task
+Scheduler the console output isn't visible, but it costs nothing
+there either.
+
 ---
 
 ## Troubleshooting
@@ -261,6 +291,8 @@ unless the RESULT line is not `SUCCESS`.
 | Scheduled run never fires | Laptop sleeping at the scheduled time | Adjust the time, or enable *Wake the computer to run this task* in the trigger |
 | Some files copy every run even when unchanged | Clock drift >2s between systems | Already handled by `/FFT`. If still an issue, check time-sync (`w32tm /resync`) on both ends |
 | Permission denied on a specific file | Another user has it open | Expected; robocopy retries 2× per `/R:2` flag |
+| `RESULT: FAILURE` with `ERROR 1 (0x00000001) Incorrect function` on `.gdoc` / `.gsheet` files | Robocopy is trying to replicate a Google Drive shortcut file's special filesystem attributes to the SMB destination, which doesn't speak Drive. Fixed in the current script by excluding these filetypes via `/XF` (the shortcuts are useless on the PI server anyway — they only resolve from a Drive-aware client). | Verify the operator has the **current** `.bat`: open it in Notepad and confirm it contains `/XF *.gdoc *.gsheet …`. If older copies are running on other machines, replace them from the GitHub raw URL. |
+| `RESULT: FAILURE` with multiple `ERROR 32 (0x00000020) The process cannot access the file because it is being used by another process` | Two or more `robocopy.exe` instances are running concurrently against the same destination, causing self-inflicted file locks. Almost always caused by an operator double-clicking the script multiple times thinking the first run had hung. | Open Task Manager → Details → kill all `robocopy.exe` processes. Wait 10 seconds. Run the script **once** and let it complete (5–15 min on first run; seconds afterwards). The newer script's console echoes prevent this footgun. |
 
 ---
 
