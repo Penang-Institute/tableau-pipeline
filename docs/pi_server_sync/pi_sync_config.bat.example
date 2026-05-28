@@ -1,0 +1,57 @@
+@echo off
+REM =====================================================================
+REM  Shared config for the PI sync scripts -- TEMPLATE / EXAMPLE.
+REM
+REM  This file is committed to git as a structural reference. The real
+REM  pi_sync_config.bat (with live URLs) is git-ignored and lives only
+REM  on the deploy target (Hajar's laptop).
+REM
+REM  SETUP FOR A NEW LAPTOP:
+REM    1. Copy this file:
+REM         copy pi_sync_config.bat.example pi_sync_config.bat
+REM    2. Open pi_sync_config.bat in Notepad
+REM    3. Replace the placeholder URLs below with the real ones
+REM    4. Deploy alongside the other .bat files (typically C:\Scripts\)
+REM
+REM  Both sync_drive_to_pi_server.bat and sync_drive_to_pi_server_cleanup.bat
+REM  CALL pi_sync_config.bat near the top to load webhook URLs in one place.
+REM  Keeping URLs here means rotating them is a one-file change.
+REM
+REM  If pi_sync_config.bat is missing on the laptop, the sync scripts still
+REM  work -- they just run silently with no webhook alerts.
+REM =====================================================================
+
+REM ---- Healthchecks.io ------------------------------------------------
+REM  Free silence-detection service. The daily script appends /start when
+REM  it begins, and /fail or nothing (success) when it finishes. If the
+REM  expected ping does not arrive within the grace window, healthchecks
+REM  alerts you via email / Telegram / Slack / etc.
+REM
+REM  Setup:
+REM    1. Sign up at https://healthchecks.io (free)
+REM    2. Add Check -> "PI Sync -- Daily"
+REM       Schedule: Cron, "15 9 * * 1-5", timezone Asia/Kuala_Lumpur
+REM       Grace time: 4 hours
+REM    3. Integrations -> add Email (or Telegram / Slack)
+REM    4. Copy the Ping URL and paste it below, replacing the UUID
+REM ---------------------------------------------------------------------
+set "HC_URL=https://hc-ping.com/REPLACE-WITH-YOUR-UUID"
+
+REM ---- ntfy.sh --------------------------------------------------------
+REM  Free push notification service. The scripts post failure detail to
+REM  a topic URL; subscribing to that topic on your phone (ntfy app) gets
+REM  you instant pushes. Anyone who knows the topic name can read messages,
+REM  so use a long random suffix -- not just "penang-pi-sync".
+REM
+REM  Generate a random suffix on macOS / Linux:
+REM    openssl rand -hex 8
+REM  ...or on Windows (in PowerShell):
+REM    -join ((48..57)+(97..102) | Get-Random -Count 16 | %% {[char]$_})
+REM
+REM  Setup:
+REM    1. Pick an unguessable topic name, e.g. penang-pi-sync-<random>
+REM    2. Install ntfy app on your phone (iOS App Store / Google Play)
+REM    3. Subscribe to that topic in the app, enable notifications
+REM    4. Paste the matching URL below
+REM ---------------------------------------------------------------------
+set "NTFY_URL=https://ntfy.sh/penang-pi-sync-REPLACE-WITH-RANDOM-SUFFIX"

@@ -256,6 +256,105 @@ RESULT: SUCCESS - files copied + DEST extras preserved (source files seen: 6550,
 Between those two lines is robocopy's own output — you rarely need it
 unless the RESULT line is not `SUCCESS`.
 
+---
+
+## Monitoring & alerts
+
+The scripts can optionally push alerts to two free services so failures
+surface without anyone having to read the log dir every day. Alerting is
+**purely additive** — if the config file is missing or the URLs are
+placeholders, the sync still runs exactly as before, just silently.
+
+### Two signals, two failure modes
+
+| Service | Catches | Channel |
+|---|---|---|
+| **healthchecks.io** | The daily run **didn't happen at all** (laptop asleep, Task Scheduler didn't fire, Drive signed out before the script started). Detects *silence*. | Email / Telegram / Slack (your choice in their dashboard) |
+| **ntfy.sh** | The script *did* run and reported a failure (source unreachable, dest unreachable, robocopy exit ≥ 8). Detects *active errors*. | Phone push notification |
+
+You need both — a webhook can only fire when the script runs. If the
+laptop is off, only healthchecks.io's "expected ping didn't arrive"
+alert will tell you something is wrong.
+
+### Files involved
+
+- [`pi_sync_config.bat`](pi_sync_config.bat) — holds `HC_URL` and
+  `NTFY_URL`. Both sync scripts and the smoke test `call` this file at
+  the top. Deploy it alongside the other `.bat` files in `C:\Scripts\`.
+- The three `.bat` scripts each contain `if defined HC_URL curl ...`
+  lines at every exit path. The `if defined` guard means **a missing
+  config file silently disables alerting** — the sync itself never
+  fails because of webhook plumbing.
+
+### One-time setup
+
+1. **healthchecks.io** — sign up free, add a check named "PI Sync —
+   Daily" with period 1 day and grace 4 hours. Copy the Ping URL into
+   `HC_URL` in `pi_sync_config.bat`. Under *Integrations*, add Email
+   (or Telegram / Slack).
+2. **ntfy.sh** — pick an unguessable topic name like
+   `penang-pi-sync-x9k2m4q7`, paste the matching URL
+   (`https://ntfy.sh/<topic>`) into `NTFY_URL`. Install the **ntfy**
+   app on your phone, subscribe to that topic, enable notifications.
+3. **Verify before deploying** — run `pi_sync_smoke_test.bat` on the
+   target laptop. It now includes a `[webhooks]` check that proves
+   both endpoints are reachable from inside the office network. Both
+   lines must say `OK` before scheduling the real job.
+
+### What you'll receive
+
+| Event on the laptop | What arrives, where | How fast |
+|---|---|---|
+| Sync succeeds | (nothing — silent; success only updates the healthchecks dashboard) | — |
+| Sync runs, robocopy fails (exit ≥ 8) | ntfy push: `PI sync FAILED: robocopy exit=8 on HAJAR-LAPTOP` | Seconds |
+| Source unreachable (Drive signed out) | ntfy push: `source unreachable on HAJAR-LAPTOP` | Seconds |
+| Dest unreachable (off LAN / server down) | ntfy push: `dest unreachable on HAJAR-LAPTOP` | Seconds |
+| Laptop asleep / scheduled task didn't fire | healthchecks.io email/Telegram: "PI Sync — Daily is down" | After 28h grace |
+| Cleanup script REAL-mode failure | ntfy push: `PI cleanup FAILED: …` | Seconds |
+| Cleanup script DRY-RUN failure | (silent — operator is reading the log already) | — |
+
+### Testing the alert chain
+
+Two tests confirm the plumbing actually works end-to-end:
+
+1. **Force a real failure** — temporarily rename `SRC` in the daily
+   script to a path that doesn't exist (e.g.
+   `H:\Shared drives\NoSuchFolder`). Right-click → Run the scheduled
+   task. Your phone should buzz within seconds with the
+   `source unreachable` push. Restore the real path immediately
+   afterwards.
+2. **Force a silence alert** (optional, takes ~28h) — disable the
+   scheduled task for one day. Next day, healthchecks.io should email
+   you "PI Sync — Daily is down". Re-enable the task.
+
+After test 1 you've proven failure pushes work. After test 2 you've
+proven silence detection works.
+
+### Disabling alerts temporarily
+
+If you need to pause alerts during planned maintenance:
+
+- **Both at once:** rename `pi_sync_config.bat` → `pi_sync_config.bat.disabled`.
+  All three scripts will silently skip webhooks and behave like the
+  pre-monitoring version. Restore the name when done.
+- **Healthchecks only:** in healthchecks.io, click the check → Pause.
+  Pings still arrive (and are logged in the history) but no alerts fire.
+- **ntfy only:** unsubscribe from the topic in the phone app, or
+  temporarily blank out `NTFY_URL` in `pi_sync_config.bat`.
+
+### Rotating webhook URLs
+
+If either URL leaks (e.g. you commit `pi_sync_config.bat` to a public
+repo by accident), rotate immediately:
+
+- **HC_URL:** in healthchecks.io, click the check → Settings → click
+  the regenerate icon next to the UUID. Paste the new URL into
+  `pi_sync_config.bat` on the laptop.
+- **NTFY_URL:** pick a new random topic name, update
+  `pi_sync_config.bat`, resubscribe in the phone app. Old topic still
+  works for anyone who knows it (ntfy has no auth on free topics),
+  but no script will post to it anymore.
+
 ### What you should see on the console (interactive runs)
 
 When the operator double-clicks the script, the console window shows

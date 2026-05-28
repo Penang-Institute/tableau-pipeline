@@ -125,6 +125,38 @@ if errorlevel 1 (
 )
 echo.
 
+REM ---- 7. Webhooks: can we reach the alert endpoints? ----
+REM Loads the shared config so HC_URL / NTFY_URL match what the real
+REM scripts will use. Both pings are best-effort -- a corporate proxy
+REM blocking outbound HTTPS would silently break alerting in production,
+REM so testing it once here, before deployment, is the cheap insurance.
+call "%~dp0pi_sync_config.bat" 2>nul
+echo [webhooks]  Testing outbound HTTPS to alert endpoints...
+if not defined HC_URL (
+    echo [webhooks]  HC_URL not set in pi_sync_config.bat -- skipping.
+) else (
+    curl -fsS -m 10 --retry 2 "!HC_URL!/start" >nul 2>&1
+    if errorlevel 1 (
+        echo [webhooks]  FAIL -- could not reach healthchecks.io.
+        echo              Corporate proxy may be blocking outbound HTTPS,
+        echo              or the URL is wrong. Daily alerts will NOT work.
+    ) else (
+        echo [webhooks]  OK -- healthchecks.io reachable. A "start" ping
+        echo              just arrived on the healthchecks dashboard.
+    )
+)
+if not defined NTFY_URL (
+    echo [webhooks]  NTFY_URL not set in pi_sync_config.bat -- skipping.
+) else (
+    curl -fsS -m 10 -d "smoke test from %COMPUTERNAME% by %USERNAME%" "!NTFY_URL!" >nul 2>&1
+    if errorlevel 1 (
+        echo [webhooks]  FAIL -- could not reach ntfy.sh.
+    ) else (
+        echo [webhooks]  OK -- ntfy.sh push sent. Check your phone now.
+    )
+)
+echo.
+
 echo ============================================================
 echo  Smoke test complete.
 echo.
@@ -132,6 +164,7 @@ echo  GO/NO-GO checklist for deploying the real script:
 echo    [elevation] must say OK
 echo    [source]    must say OK with file count well above 50
 echo    [dest]      must say OK
+echo    [webhooks]  must say OK for both lines (or skipped intentionally)
 echo  [wmic] and [pwsh] are diagnostic only -- ignore their results.
 echo ============================================================
 echo.

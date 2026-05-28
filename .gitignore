@@ -12,9 +12,16 @@ output/
 # macOS
 .DS_Store
 
-# Data files
+# Data files & generated reports (kept local, not version-controlled)
 *.csv
 *.parquet
 *.xlsx
 *.xls
 *.pdf
+*.pptx
+
+# Operational secrets -- live values stay on the deploy target only.
+# A *.example file with placeholders is tracked so the structure is
+# version-controlled. To set up a new laptop: copy the .example to the
+# real filename and fill in the real URLs.
+docs/pi_server_sync/pi_sync_config.bat

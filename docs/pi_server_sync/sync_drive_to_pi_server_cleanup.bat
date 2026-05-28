@@ -32,6 +32,12 @@ REM Tune upward if the Raw Data folder is known to have many more files.
 set "MIN_FILES=50"
 REM ---------------------------------------------------------------------
 
+REM Load webhook URLs from a shared config file alongside this script.
+REM This script is destructive but operator-launched, so we only push to
+REM ntfy on failure (no healthchecks ping -- silence is not a useful signal
+REM here because cleanup runs are manual, not scheduled).
+call "%~dp0pi_sync_config.bat" 2>nul
+
 REM /XF excludes Google Drive shortcut files (.gdoc, .gsheet, etc.). These
 REM are 180-byte JSON pointers with special attributes that the SMB
 REM destination cannot accept -- robocopy returns "Incorrect function"
@@ -80,12 +86,14 @@ dir "%SRC%" >nul 2>&1
 if errorlevel 1 (
     echo ERROR: source folder not reachable: %SRC% >> "%LOG%"
     echo Is Google Drive for Desktop running and signed in? >> "%LOG%"
+    if /i "%MODE%"=="REAL" if defined NTFY_URL curl -fsS -m 10 -H "Title: PI cleanup FAILED" -H "Priority: high" -d "source unreachable on %COMPUTERNAME%" "%NTFY_URL%" >nul 2>&1
     exit /b 2
 )
 dir "%DEST%" >nul 2>&1
 if errorlevel 1 (
     echo ERROR: destination folder not reachable: %DEST% >> "%LOG%"
     echo Is the laptop on the office LAN? >> "%LOG%"
+    if /i "%MODE%"=="REAL" if defined NTFY_URL curl -fsS -m 10 -H "Title: PI cleanup FAILED" -H "Priority: high" -d "dest unreachable on %COMPUTERNAME%" "%NTFY_URL%" >nul 2>&1
     exit /b 3
 )
 
@@ -98,6 +106,7 @@ echo Source file count: %COUNT% (min required: %MIN_FILES%) >> "%LOG%"
 if %COUNT% LSS %MIN_FILES% (
     echo ERROR: source has only %COUNT% files, below MIN_FILES=%MIN_FILES%. >> "%LOG%"
     echo Refusing to run. Drive for Desktop may be signed out or still syncing. >> "%LOG%"
+    if /i "%MODE%"=="REAL" if defined NTFY_URL curl -fsS -m 10 -H "Title: PI cleanup FAILED" -H "Priority: high" -d "MIN_FILES guard tripped on %COMPUTERNAME% (count=%COUNT%)" "%NTFY_URL%" >nul 2>&1
     exit /b 5
 )
 
@@ -118,4 +127,9 @@ set RC=%ERRORLEVEL%
 echo ==== Cleanup (%MODE%) finished %date% %time% (robocopy exit=%RC%) ==== >> "%LOG%"
 
 REM Robocopy: 0-7 = ok (various combos of copied/extra/mismatch), >=8 = fail.
-if %RC% GEQ 8 (exit /b %RC%) else (exit /b 0)
+REM Cleanup is operator-launched, so only REAL-mode failures push to ntfy.
+REM Dry-run failures stay silent -- the operator is reading the log already.
+if %RC% GEQ 8 (
+    if /i "%MODE%"=="REAL" if defined NTFY_URL curl -fsS -m 10 -H "Title: PI cleanup FAILED" -H "Priority: high" -d "robocopy exit=%RC% on %COMPUTERNAME%, see %LOG%" "%NTFY_URL%" >nul 2>&1
+    exit /b %RC%
+) else (exit /b 0)

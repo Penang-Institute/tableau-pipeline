@@ -30,6 +30,19 @@ REM ---------------------------------------------------------------------
 
 if not exist "%LOGDIR%" mkdir "%LOGDIR%" 2>nul
 
+REM Load webhook URLs from a shared config file alongside this script.
+REM Failing silently here is intentional: a missing config file should not
+REM break the sync -- it just disables webhook alerts. %~dp0 is the dir
+REM of THIS script (including trailing backslash), so the call resolves
+REM no matter where Task Scheduler invokes us from.
+call "%~dp0pi_sync_config.bat" 2>nul
+
+REM Ping healthchecks "started". Distinguishes a hung run from "never ran".
+REM --retry 3 absorbs LAN blips; -m 10 caps total wait so the sync is not
+REM held back by a slow webhook; >nul 2>&1 guarantees a webhook outage can
+REM never change this script's exit code.
+if defined HC_URL curl -fsS -m 10 --retry 3 "%HC_URL%/start" >nul 2>&1
+
 REM Always-on invocation marker: written BEFORE any external command so
 REM that even if a downstream call hangs, we have evidence the script
 REM was invoked, by whom, and whether it was elevated. One line per run
@@ -72,12 +85,16 @@ dir "%SRC%" >nul 2>&1
 if errorlevel 1 (
     echo ERROR: source folder not reachable: %SRC% >> "%LOG%"
     echo Is Google Drive for Desktop running and signed in? >> "%LOG%"
+    if defined HC_URL   curl -fsS -m 10 --retry 3 "%HC_URL%/fail" -d "source unreachable: %SRC%" >nul 2>&1
+    if defined NTFY_URL curl -fsS -m 10 -H "Title: PI sync FAILED" -H "Priority: high" -d "source unreachable on %COMPUTERNAME%" "%NTFY_URL%" >nul 2>&1
     exit /b 2
 )
 dir "%DEST%" >nul 2>&1
 if errorlevel 1 (
     echo ERROR: destination folder not reachable: %DEST% >> "%LOG%"
     echo Is the laptop on the office LAN? >> "%LOG%"
+    if defined HC_URL   curl -fsS -m 10 --retry 3 "%HC_URL%/fail" -d "dest unreachable: %DEST%" >nul 2>&1
+    if defined NTFY_URL curl -fsS -m 10 -H "Title: PI sync FAILED" -H "Priority: high" -d "dest unreachable on %COMPUTERNAME%" "%NTFY_URL%" >nul 2>&1
     exit /b 3
 )
 
@@ -138,4 +155,18 @@ echo [%TIME%] %SUMMARY%
 
 REM Robocopy exit codes: 0 = no change, 1 = files copied, 2 = extra files,
 REM 3 = 1+2, >=8 = real failure. Treat 0-7 as success for Task Scheduler.
-if %RC% GEQ 8 (exit /b %RC%) else (exit /b 0)
+REM
+REM Webhook fanout on the final exit:
+REM   Success -> ping healthchecks only (silent; ntfy stays quiet so the
+REM              phone doesn't buzz every morning). Body carries the file
+REM              count + RC so the healthchecks history page shows trend.
+REM   Failure -> ping healthchecks /fail (flips dashboard red) AND ntfy
+REM              with Priority: high (breaks DND on most phone setups).
+if %RC% GEQ 8 (
+    if defined HC_URL   curl -fsS -m 10 --retry 3 "%HC_URL%/fail" -d "robocopy exit=%RC%" >nul 2>&1
+    if defined NTFY_URL curl -fsS -m 10 -H "Title: PI sync FAILED" -H "Priority: high" -d "robocopy exit=%RC% on %COMPUTERNAME%, see %LOG%" "%NTFY_URL%" >nul 2>&1
+    exit /b %RC%
+) else (
+    if defined HC_URL curl -fsS -m 10 --retry 3 "%HC_URL%" -d "files=%SRC_FILES% rc=%RC%" >nul 2>&1
+    exit /b 0
+)
