@@ -14,7 +14,8 @@ main_workbook:
 
 # Google Drive folder IDs
 drive_folders:
-  cpi: "1z7bgpffHG6fVIpzpLnnLYRPUcMKRv_Yq"
+  cpi: "1_1FRwXto-o0B2udDH7EmDkfCBQJjcIA5"   # 3. Economy/CPI/DOSM/opendosm (was "By State" orphan folder)
+  ppi: "1TvlupKDAGmWa5k7n1iuoMYDYCAhlm_Xq"   # 3. Economy/PPI (DOSM)/Local Production/opendosm
   gdp_quarterly: "12EuOOIBzkR1jOlDnYU5Jyqm1Ihb2VO3O"
   population_excel: "1N-qKoZRht_8qdAmaeExb3WKNBuJEnDv1"
   bed_utilisation: "1-sNb7Pigbcn-QBIgR3cTJwH5btzuKPu1"
@@ -82,6 +83,16 @@ transforms:
   trade:
     sheets:
       output: "1zw1vHUE3wkKNEs-A9FZvxfmkXAxxrmSJLuVntxCQ2lc"
+    drive_files:
+      # Inbox folder where Hajar drops the raw DOSM JAD 12 monthly Excel files.
+      # Create the folder in the shared "Raw Data" drive and paste its ID here.
+      inbox: "REPLACE_WITH_JAD12_INBOX_FOLDER_ID"
+
+  trade_hs:
+    drive_files:
+      # Inbox folder where Hajar drops the raw METS Online Penang HS CSV files.
+      # Create the folder in the shared "Raw Data" drive and paste its ID here.
+      inbox: "REPLACE_WITH_METS_INBOX_FOLDER_ID"
 
   airports:
     sheets:

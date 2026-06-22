@@ -14,7 +14,8 @@ import pandas as pd
 
 from pipeline.fetchers.opendosm import fetch_parquet, get_parquet_url
 from pipeline.loaders.file_writer import write_csv
-from pipeline.loaders.google_sheets import get_drive_folder_id, upload_to_drive
+from pipeline.loaders.google_sheets import get_drive_folder_id
+from pipeline.loaders.drive_merge import append_periods_to_drive_csv
 
 logger = logging.getLogger(__name__)
 
@@ -39,9 +40,8 @@ def transform() -> pd.DataFrame:
 
 def load(df: pd.DataFrame) -> None:
     """Write PPI data to Drive folder and local CSV."""
-    csv_path = write_csv(df, "ppi.csv", date_tag=True)
-    folder_id = get_drive_folder_id("cpi")
-    upload_to_drive(csv_path, folder_id, "ppi.csv", date_tag=True)
+    write_csv(df, "ppi.csv", date_tag=True)  # local dated history
+    append_periods_to_drive_csv(df, get_drive_folder_id("ppi"), "ppi.csv")
 
 
 def main() -> pd.DataFrame:
