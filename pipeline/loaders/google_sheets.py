@@ -152,6 +152,58 @@ def append_new_months_to_sheet(
             time.sleep(wait)
 
 
+def upsert_rows_to_sheet(
+    df_new: pd.DataFrame,
+    spreadsheet_id: str,
+    sheet_name: str,
+    key_cols: list[str],
+    retries: int = _DEFAULT_RETRIES,
+) -> None:
+    """Replace existing rows whose key matches df_new, keep the rest, write back.
+
+    Unlike append (which only adds new periods), this is an upsert: rows whose
+    key (e.g. State+Year) appears in df_new are replaced with the new values
+    (revisions), rows whose key is NOT in df_new are preserved (older history a
+    newer publication no longer covers), and brand-new keys are added. Full-tab
+    rewrite. Used for annual GDP, where each publication revises recent years
+    but only spans the last ~10.
+    """
+    for attempt in range(retries):
+        try:
+            gc = _get_gspread_client()
+            ws = gc.open_by_key(spreadsheet_id).worksheet(sheet_name)
+            values = ws.get_all_values()
+            if not values:
+                write_sheet(df_new, spreadsheet_id, sheet_name)
+                return
+            header = values[0]
+            cur = pd.DataFrame(values[1:], columns=header)
+            new = df_new[header].astype(str)
+
+            def _key(df: pd.DataFrame):
+                return df[key_cols].astype(str).agg("␟".join, axis=1)
+
+            new_keys = set(_key(new))
+            kept = cur[~_key(cur).isin(new_keys)]
+            out = pd.concat([kept, new], ignore_index=True)
+            ws.clear()
+            ws.update([header] + out.values.tolist())
+            logger.info(
+                "Upserted %d rows into '%s' (%d kept + %d new = %d)",
+                len(new), sheet_name, len(kept), len(new), len(out),
+            )
+            return
+        except Exception as e:
+            if attempt == retries - 1:
+                raise
+            wait = _DEFAULT_BACKOFF_BASE ** (attempt + 1)
+            logger.warning(
+                "Attempt %d failed upserting '%s' in %s: %s — retrying in %ds",
+                attempt + 1, sheet_name, spreadsheet_id, e, wait,
+            )
+            time.sleep(wait)
+
+
 def write_to_main_workbook(df: pd.DataFrame, sheet_key: str) -> None:
     """Write a DataFrame to a named sheet in the main dashboard workbook.
 

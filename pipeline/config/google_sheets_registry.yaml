@@ -115,6 +115,7 @@ transforms:
     drive_files:
       state: "1lG6J8-bBxGYeD-pne_7CivjHW0phvxdd"
       malaysia: "1lL-DXiVODFquAj373iu2t70iKpJCeIzA"
+      inbox: "1tHl-wenETDuCGvNAh5SkMDZhO4G6D8Vy"   # GDP_inbox: Hajar drops "Table of GDP by State, YYYY-YYYY.xlsx"
 
   demo_mukim:
     sheets:
