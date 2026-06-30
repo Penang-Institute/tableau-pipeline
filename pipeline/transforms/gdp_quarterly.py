@@ -137,7 +137,7 @@ def load(df: pd.DataFrame) -> None:
     """Write GDP quarterly data to Google Drive."""
     csv_path = write_csv(df, "gdp_qtr.csv", date_tag=True)
     folder_id = get_drive_folder_id("gdp_quarterly")
-    upload_to_drive(csv_path, folder_id, "gdp_qtr.csv", date_tag=True)
+    upload_to_drive(csv_path, folder_id, "gdp_qtr.csv", date_tag=False)
 
 
 def main() -> pd.DataFrame:
