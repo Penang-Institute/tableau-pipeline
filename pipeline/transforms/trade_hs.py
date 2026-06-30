@@ -143,9 +143,13 @@ def _reshape_mets(df: pd.DataFrame) -> pd.DataFrame:
         if required not in long.columns:
             long[required] = pd.NA
 
-    # Keep Penang only (drop any "PEN M'SIA" Malaysia-aggregate rows).
-    norm_state = long["state"].astype("string").str.upper().str.replace(r"[^A-Z]", "", regex=True)
-    long = long[norm_state != "PENMSIA"]
+    # Keep real state rows only — drop the "Grand Total" row (state "0"), the
+    # "File Generated On" footer (blank state) and any "PEN M'SIA" aggregate.
+    norm_state = (
+        long["state"].astype("string").str.upper()
+        .str.replace(r"[^A-Z]", "", regex=True).fillna("")
+    )
+    long = long[~norm_state.isin(["", "PENMSIA"])]
 
     long["hs"] = _normalise_hs(long["hs"])
     long["trade_values"] = pd.to_numeric(long["trade_values"], errors="coerce")
