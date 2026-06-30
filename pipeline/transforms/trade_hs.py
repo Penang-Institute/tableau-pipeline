@@ -1,28 +1,23 @@
-"""Penang HS-level trade data transform (METS Online).
+"""Penang HS-level trade data transform (METS Online — Trade by Channel).
 
-Ported from: tableau_data_prep/scripts/trade/prep_hs.R (79 lines).
+Semi-automated flow: Hajar downloads the monthly Penang "Trade by Channel (RM)
+Multi Trade Flow" export from METS Online (CSV or XLSX — one file holds *both*
+exports and imports) and drops it in a Drive inbox folder. This transform reads
+each file, melts the month/direction value columns into long format, and writes
+`penang_monthly_exim_hs_country.csv`.
 
-Semi-automated flow: Hajar downloads the monthly Penang "Trade by Channel" HS
-export from METS Online (one CSV for exports, one for imports) and drops them in
-a shared Google Drive "inbox" folder. This transform lists that folder, melts
-each wide month-matrix into long format, and writes the combined CSV/Parquet.
+Real METS layout (verified against a 2026 export):
+  - A title row, then the header row: No, State, Chapter, Chapter Description,
+    Partner Country Name, then one column per month *and direction*, e.g.
+    "May 2026 IMPORTS Value (MYR)", "May 2026 EXPORTS Value (MYR)".
+  - HS code lives in "Chapter" (stored as an Excel text formula ="01" in CSV).
+  - Trade direction is in the value-column header, NOT the file name.
 
-Raw input  : METS "Trade by Channel" CSV — two header rows; metadata columns
-             (state, HS chapter, partner country) followed by one column per
-             month; one CSV per trade direction.
-Target form: state | type_of_trade | hs | country | month | trade_values
-             (see "2. External Trade dashboard.pdf").
+Target form (PDF "External Trade dashboard", worksheet b):
+  state | type_of_trade | hs | country | month | trade_values
 
-NOTE: METS column wording can drift between releases. The metadata-column
-detection below is deliberately forgiving (keyword match), and month columns are
-detected by parseable month/year names. Confirm the mapping against a real METS
-export during verification (a file that yields zero month columns logs a warning
-and is skipped rather than crashing the run).
-
-Sources:
-  - Google Drive inbox folder: registry trade_hs.drive_files.inbox
-Output:
-  - penang_monthly_exim_hs_country.csv / .parquet (date-tagged output dir)
+Source : Drive inbox folder (registry trade_hs.drive_files.inbox)
+Output : penang_monthly_exim_hs_country.csv / .parquet
 """
 
 from __future__ import annotations
@@ -42,16 +37,9 @@ logger = logging.getLogger(__name__)
 _PLACEHOLDER_PREFIX = "REPLACE_WITH"
 OUTPUT_COLUMNS = ["state", "type_of_trade", "hs", "country", "month", "trade_values"]
 
-_MALAY_MONTHS = {
-    "januari": 1, "februari": 2, "mac": 3, "april": 4, "mei": 5, "jun": 6,
-    "julai": 7, "ogos": 8, "september": 9, "oktober": 10, "november": 11,
-    "disember": 12,
-}
-_ENGLISH_MONTHS = {
-    "january": 1, "jan": 1, "february": 2, "feb": 2, "march": 3, "mar": 3,
-    "april": 4, "apr": 4, "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
-    "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9, "october": 10,
-    "oct": 10, "november": 11, "nov": 11, "december": 12, "dec": 12,
+_MONTHS = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6, "jul": 7,
+    "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
 }
 
 
@@ -59,40 +47,20 @@ def _is_placeholder(value: str) -> bool:
     return (not value) or value.startswith(_PLACEHOLDER_PREFIX)
 
 
-def _make_clean_names(raw_names: list[str]) -> list[str]:
-    """Convert header strings to snake_case (like R's janitor::make_clean_names)."""
-    result = []
-    for name in raw_names:
-        clean = re.sub(r"[^a-zA-Z0-9]", "_", str(name).lower())
-        clean = re.sub(r"_+", "_", clean).strip("_")
-        result.append(clean)
-    return result
+def _clean(name: str) -> str:
+    c = re.sub(r"[^a-z0-9]+", "_", str(name).lower())
+    return re.sub(r"_+", "_", c).strip("_")
 
 
-def _extract_trade_type(filename: str) -> str | None:
-    """Infer 'exports' / 'imports' from the raw file name."""
-    low = filename.lower()
-    if "export" in low:
-        return "exports"
-    if "import" in low:
-        return "imports"
-    return None
-
-
-def _parse_month_token(token: str) -> pd.Timestamp | None:
-    """Parse a (cleaned) column name into a 1st-of-month Timestamp, else None."""
-    t = token.lower()
-    m = re.search(r"(20\d{2})[_\-\s]?(0[1-9]|1[0-2])(?!\d)", t)
-    if m:
-        return pd.Timestamp(year=int(m.group(1)), month=int(m.group(2)), day=1)
-    m = re.search(r"(?<!\d)(0[1-9]|1[0-2])[_\-\s](20\d{2})", t)
-    if m:
-        return pd.Timestamp(year=int(m.group(2)), month=int(m.group(1)), day=1)
-    year_m = re.search(r"(20\d{2})", t)
-    if year_m:
-        for name, num in {**_MALAY_MONTHS, **_ENGLISH_MONTHS}.items():
-            if re.search(rf"(?<![a-z]){name}(?![a-z])", t):
-                return pd.Timestamp(year=int(year_m.group(1)), month=num, day=1)
+def _parse_month(token: str) -> pd.Timestamp | None:
+    """Parse 'May 2026 ...' (cleaned: 'may_2026_...') into a 1st-of-month date."""
+    t = str(token).lower()
+    ym = re.search(r"(20\d{2})", t)
+    if not ym:
+        return None
+    for mon, num in _MONTHS.items():
+        if re.search(rf"(?<![a-z]){mon}", t):
+            return pd.Timestamp(year=int(ym.group(1)), month=num, day=1)
     return None
 
 
@@ -105,59 +73,62 @@ def _find_col(cols: list[str], *keywords: str) -> str | None:
 
 
 def _normalise_hs(series: pd.Series) -> pd.Series:
-    """HS chapter as a 2-digit string code (zero-pad single digits)."""
-    s = series.astype("string").str.strip()
-    is_digit = s.str.fullmatch(r"\d+").fillna(False)
-    return s.mask(is_digit, s.str.zfill(2))
+    """HS chapter → 2-digit string (strip the Excel ="01" wrapper, zero-pad)."""
+    digits = series.astype("string").str.replace(r"[^0-9]", "", regex=True)
+    return digits.str.zfill(2).where(digits.str.len() > 0, series.astype("string"))
 
 
-def _read_mets_csv(path: Path) -> pd.DataFrame:
-    """Read a METS CSV whose first two rows form a (collapsed) header."""
-    header = pd.read_csv(path, header=None, nrows=2, dtype=str)
-    raw_names = []
-    for col in range(header.shape[1]):
-        parts = [
-            str(header.iloc[row, col]).strip()
-            for row in range(header.shape[0])
-            if pd.notna(header.iloc[row, col]) and str(header.iloc[row, col]).strip()
-        ]
-        raw_names.append(" ".join(parts))
-    names = _make_clean_names(raw_names)
-    return pd.read_csv(path, skiprows=2, header=None, names=names)
+def _detect_header_row(preview: pd.DataFrame) -> int:
+    """The header row is the one containing both 'State' and 'Chapter'."""
+    for i in range(len(preview)):
+        vals = [str(x).strip().lower() for x in preview.iloc[i]]
+        if "state" in vals and "chapter" in vals:
+            return i
+    return 0
 
 
-def _reshape_mets(df: pd.DataFrame, type_of_trade: str) -> pd.DataFrame:
-    """Melt one wide METS month-matrix into the long target schema.
+def _read_mets_file(path: Path, is_excel: bool) -> pd.DataFrame:
+    """Read a METS file (CSV or XLSX), skipping the title row(s); clean columns."""
+    if is_excel:
+        preview = pd.read_excel(path, sheet_name=0, header=None, nrows=8, dtype=str)
+        hdr = _detect_header_row(preview)
+        df = pd.read_excel(path, sheet_name=0, skiprows=hdr, dtype=str)
+    else:
+        preview = pd.read_csv(path, header=None, nrows=8, dtype=str)
+        hdr = _detect_header_row(preview)
+        df = pd.read_csv(path, skiprows=hdr, dtype=str)
+    df.columns = [_clean(c) for c in df.columns]
+    return df
 
-    Pure function (no I/O) so it can be unit-tested with an in-memory fixture.
+
+def _reshape_mets(df: pd.DataFrame) -> pd.DataFrame:
+    """Melt the month/direction value columns into the long target schema.
+
+    Pure function (no I/O) so it is unit-testable with an in-memory fixture.
     """
     cols = list(df.columns)
-    month_cols = [c for c in cols if _parse_month_token(c) is not None]
-    if not month_cols:
-        logger.warning("No month columns detected in METS file — check raw format.")
+    value_cols = [
+        c for c in cols
+        if re.search(r"import|export", c) and _parse_month(c) is not None
+    ]
+    if not value_cols:
+        logger.warning("No month/direction value columns detected — check format.")
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
 
     state_col = _find_col(cols, "state")
-    hs_col = _find_col(cols, "hs", "chapter")
+    hs_col = next((c for c in cols if c == "chapter"), None) \
+        or next((c for c in cols if "chapter" in c and "desc" not in c), None)
     country_col = _find_col(cols, "country", "partner")
-
-    work = df.copy()
-    # Drop the "PEN M'SIA" (Malaysia aggregate) rows; keep Penang only.
-    if state_col:
-        norm = (
-            work[state_col].astype("string").str.upper()
-            .str.replace(r"[^A-Z]", "", regex=True)
-        )
-        work = work[norm != "PENMSIA"]
-
     id_vars = [c for c in (state_col, hs_col, country_col) if c]
-    long = work.melt(
-        id_vars=id_vars,
-        value_vars=month_cols,
-        var_name="month_raw",
-        value_name="trade_values",
+
+    long = df.melt(
+        id_vars=id_vars, value_vars=value_cols,
+        var_name="_col", value_name="trade_values",
     )
-    long["month"] = long["month_raw"].map(_parse_month_token)
+    long["month"] = long["_col"].map(_parse_month)
+    long["type_of_trade"] = long["_col"].apply(
+        lambda c: "imports" if "import" in c else "exports"
+    )
     long = long[long["month"].notna()].copy()
 
     rename = {}
@@ -168,24 +139,30 @@ def _reshape_mets(df: pd.DataFrame, type_of_trade: str) -> pd.DataFrame:
     if country_col:
         rename[country_col] = "country"
     long = long.rename(columns=rename)
-
     for required in ("state", "hs", "country"):
         if required not in long.columns:
             long[required] = pd.NA
 
+    # Keep real state rows only — drop the "Grand Total" row (state "0"), the
+    # "File Generated On" footer (blank state) and any "PEN M'SIA" aggregate.
+    norm_state = (
+        long["state"].astype("string").str.upper()
+        .str.replace(r"[^A-Z]", "", regex=True).fillna("")
+    )
+    long = long[~norm_state.isin(["", "PENMSIA"])]
+
     long["hs"] = _normalise_hs(long["hs"])
-    long["type_of_trade"] = type_of_trade
     long["trade_values"] = pd.to_numeric(long["trade_values"], errors="coerce")
-    return long[OUTPUT_COLUMNS]
+    return long[OUTPUT_COLUMNS].reset_index(drop=True)
 
 
 def transform() -> pd.DataFrame:
-    """Reshape every METS HS CSV in the Drive inbox into the long target schema."""
+    """Reshape every METS file in the Drive inbox into the long target schema."""
     folder_id = get_drive_id("trade_hs", "inbox")
     if _is_placeholder(folder_id):
         logger.warning(
             "Trade HS (METS) inbox folder not configured (%s) — "
-            "set trade_hs.drive_files.inbox in google_sheets_registry.yaml.",
+            "set trade_hs.drive_files.inbox in the registry. Skipping.",
             folder_id,
         )
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
@@ -193,36 +170,39 @@ def transform() -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     for entry in list_drive_folder(folder_id):
         name = entry["name"]
-        if not name.lower().endswith(".csv") or name.startswith("~$"):
-            continue
-        trade_type = _extract_trade_type(name)
-        if trade_type is None:
-            logger.warning("Skipping METS file (no exports/imports in name): %s", name)
+        low = name.lower()
+        is_excel = low.endswith((".xlsx", ".xls"))
+        if not (is_excel or low.endswith(".csv")) or name.startswith("~$"):
             continue
         try:
-            path = download_file_from_drive(entry["id"], suffix=".csv")
-            df = _read_mets_csv(path)
-            reshaped = _reshape_mets(df, trade_type)
+            path = download_file_from_drive(
+                entry["id"], suffix=".xlsx" if is_excel else ".csv"
+            )
+            df = _read_mets_file(path, is_excel)
+            reshaped = _reshape_mets(df)
             if not reshaped.empty:
                 frames.append(reshaped)
             logger.info("Reshaped METS file %s (%d rows)", name, len(reshaped))
         except Exception as e:
             logger.warning("Failed to process METS file %s: %s", name, e)
 
-    result = (
-        pd.concat(frames, ignore_index=True)
-        if frames
-        else pd.DataFrame(columns=OUTPUT_COLUMNS)
-    )
-    logger.info("Trade HS (METS): %d rows", len(result))
-    return result
+    if not frames:
+        return pd.DataFrame(columns=OUTPUT_COLUMNS)
+    out = pd.concat(frames, ignore_index=True)
+    out = out.drop_duplicates(
+        subset=["state", "type_of_trade", "hs", "country", "month"], keep="last"
+    ).reset_index(drop=True)
+    logger.info("Trade HS (METS): %d rows", len(out))
+    return out
 
 
 def load(df: pd.DataFrame) -> None:
-    """Write trade HS data to output files."""
+    """Write the commodity CSV/Parquet (month formatted yyyy/mm/dd per the PDF)."""
     if df.empty:
         return
-    write_csv(df, "penang_monthly_exim_hs_country.csv", date_tag=True)
+    out = df.copy()
+    out["month"] = pd.to_datetime(out["month"]).dt.strftime("%Y/%m/%d")
+    write_csv(out, "penang_monthly_exim_hs_country.csv", date_tag=True)
     write_parquet(df, "penang_monthly_exim_hs_country.parquet", date_tag=True)
 
 

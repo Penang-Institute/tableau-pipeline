@@ -92,7 +92,7 @@ transforms:
     drive_files:
       # Inbox folder where Hajar drops the raw METS Online Penang HS CSV files.
       # Create the folder in the shared "Raw Data" drive and paste its ID here.
-      inbox: "REPLACE_WITH_METS_INBOX_FOLDER_ID"
+      inbox: "1VSr1GksPPExkFgI6fnp6fk9w_oRpZ4qt"
 
   airports:
     sheets:
