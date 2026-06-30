@@ -86,7 +86,7 @@ transforms:
     drive_files:
       # Inbox folder where Hajar drops the raw DOSM JAD 12 monthly Excel files.
       # Create the folder in the shared "Raw Data" drive and paste its ID here.
-      inbox: "REPLACE_WITH_JAD12_INBOX_FOLDER_ID"
+      inbox: "1zb7OWTg6hU25-7-zoIv--7qDU386JzAg"
 
   trade_hs:
     drive_files:
