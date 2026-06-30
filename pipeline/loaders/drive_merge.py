@@ -30,13 +30,15 @@ def _period(series: pd.Series) -> pd.Series:
     return pd.to_datetime(series, format="mixed", dayfirst=True).dt.to_period("M")
 
 
-def merge_new_periods(
+def select_new_period_rows(
     cur: pd.DataFrame, new: pd.DataFrame, date_col: str = "date",
 ) -> pd.DataFrame:
-    """Return cur plus only the rows of new whose month isn't already in cur.
+    """Return only the rows of new whose month isn't already present in cur.
 
-    New rows are reformatted to match cur's date style (ISO vs dd/mm/yyyy).
-    Pure function — no I/O — so the merge logic is unit-testable.
+    The date column is reformatted to match cur's style (ISO vs dd/mm/yyyy)
+    and the result is sliced to cur's column order. Pure function — no I/O —
+    so the delta logic is unit-testable. Used by both the CSV append and the
+    Google Sheet append.
     """
     if cur.empty:
         return new.copy()
@@ -51,9 +53,17 @@ def merge_new_periods(
 
     existing_periods = set(_period(cur[date_col]))
     add = new[~_period(new[date_col]).isin(existing_periods)]
+    return add[list(cur.columns)]
+
+
+def merge_new_periods(
+    cur: pd.DataFrame, new: pd.DataFrame, date_col: str = "date",
+) -> pd.DataFrame:
+    """Return cur plus only the rows of new whose month isn't already in cur."""
+    add = select_new_period_rows(cur, new, date_col)
     if add.empty:
         return cur.copy()
-    return pd.concat([cur, add[cur.columns]], ignore_index=True)
+    return pd.concat([cur, add], ignore_index=True)
 
 
 def _drive_service():

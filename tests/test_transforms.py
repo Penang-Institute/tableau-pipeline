@@ -1745,3 +1745,196 @@ class TestLabourDemographicsComprehensive:
         result = transform()
         assert isinstance(result, pd.DataFrame)
         assert result.empty
+
+
+# ---------------------------------------------------------------------------
+# Trade by exit-entry point (JAD 12) transform tests
+# ---------------------------------------------------------------------------
+
+class TestTradeJad12Transform:
+    """Test the JAD 12 unpivot against the real publication layout."""
+
+    def _make_df3(self):
+        """Tidy (label, exports, imports) frame mirroring the real JAD 12 col 0."""
+        rows = [
+            ("JUMLAH/TOTAL", 3000, 2800),    # grand total -> dropped
+            ("JOHOR", 230, 215),             # state subtotal -> dropped
+            ("TANJUNG KUPANG", 150, 120),
+            ("PASIR GUDANG", 50, 75),
+            ("LAIN-LAIN", 30, 20),           # -> "Others"
+            ("", None, None),                # blank separator -> dropped
+            ("NEGERI SEMBILAN", 100, 110),   # NS: state row IS the point
+            ("PAHANG", 60, 70),              # Pahang: state row IS the point
+            ("SELANGOR", 800, 750),          # state subtotal -> dropped
+            ("KLIA, SEPANG", 350, 300),      # -> "KLIA, Sepang"
+            ("PELABUHAN KLANG", 450, 450),
+        ]
+        return pd.DataFrame(rows, columns=["label", "exports", "imports"])
+
+    def _reshape(self):
+        from pipeline.transforms.trade import _reshape_jad12, OUTPUT_COLUMNS
+        out = _reshape_jad12(
+            self._make_df3(),
+            pd.Timestamp("2026-04-01"),
+            pd.Timestamp("2026-06-15"),
+        )
+        return out, OUTPUT_COLUMNS
+
+    def test_output_columns_exact(self):
+        out, expected = self._reshape()
+        assert list(out.columns) == expected
+
+    def test_states_present(self):
+        out, _ = self._reshape()
+        assert set(out["State"]) == {
+            "Johor", "Negeri Sembilan", "Pahang", "Selangor"
+        }
+        assert "Jumlah/Total" not in set(out["State"])
+
+    def test_state_subtotals_dropped(self):
+        # Johor subtotal (230/215) must not survive as a data row.
+        out, _ = self._reshape()
+        johor = out[out["State"] == "Johor"]
+        assert 230 not in set(johor["Value (RM mil)"])
+        assert set(johor["Exit-entry point"]) == {
+            "Tanjung Kupang", "Pasir Gudang", "Others"
+        }
+
+    def test_lain_lain_renamed_to_others(self):
+        out, _ = self._reshape()
+        assert "Others" in set(out["Exit-entry point"])
+        assert "Lain-Lain" not in set(out["Exit-entry point"])
+
+    def test_klia_casing_fixed(self):
+        out, _ = self._reshape()
+        assert "KLIA, Sepang" in set(out["Exit-entry point"])
+        assert "Klia, Sepang" not in set(out["Exit-entry point"])
+
+    def test_ns_and_pahang_use_state_as_point(self):
+        out, _ = self._reshape()
+        assert set(out[out["State"] == "Negeri Sembilan"]["Exit-entry point"]) == {
+            "Negeri Sembilan"
+        }
+        assert set(out[out["State"] == "Pahang"]["Exit-entry point"]) == {"Pahang"}
+
+    def test_export_import_values_split(self):
+        out, _ = self._reshape()
+        row = out[
+            (out["State"] == "Johor")
+            & (out["Exit-entry point"] == "Tanjung Kupang")
+        ]
+        assert row[row["Type of trade"] == "Export"]["Value (RM mil)"].iloc[0] == 150
+        assert row[row["Type of trade"] == "Import"]["Value (RM mil)"].iloc[0] == 120
+        assert set(out["Type of trade"]) == {"Export", "Import"}
+
+    def test_date_and_updated_columns(self):
+        out, _ = self._reshape()
+        assert set(out["Date"]) == {pd.Timestamp("2026-04-01")}
+        assert set(out["Updated as of"]) == {pd.Timestamp("2026-06-15")}
+
+    def test_locate_value_columns_and_month(self):
+        from pipeline.transforms.trade import _locate_value_columns, _detect_month
+        raw = pd.DataFrame(
+            [[None, None, "EKSPORT", None, None, None, "IMPORT", None, None],
+             [None, None, "APR", None, None, None, "APR", None, None],
+             [None, None, 2026, 2025, 2026, None, 2026, 2025, 2026]]
+        )
+        exp_col, imp_col = _locate_value_columns(raw)
+        assert (exp_col, imp_col) == (2, 6)
+        assert _detect_month(raw, exp_col) == pd.Timestamp("2026-04-01")
+
+    @patch("pipeline.transforms.trade._read_jad12_sheet")
+    @patch("pipeline.transforms.trade.download_excel_from_drive")
+    @patch("pipeline.transforms.trade.list_drive_folder")
+    @patch("pipeline.transforms.trade.get_drive_id", return_value="FAKE_FOLDER")
+    def test_transform_wiring(self, mock_id, mock_list, mock_dl, mock_read):
+        from pipeline.transforms.trade import transform, OUTPUT_COLUMNS
+        mock_list.return_value = [{"id": "f1", "name": "05 JADUAL_TABLES.xlsx"}]
+        mock_dl.return_value = MagicMock()
+        mock_read.return_value = (self._make_df3(), pd.Timestamp("2026-04-01"))
+
+        result = transform()
+        assert list(result.columns) == OUTPUT_COLUMNS
+        assert not result.empty
+        assert set(result["Date"]) == {pd.Timestamp("2026-04-01")}
+
+    @patch("pipeline.transforms.trade.get_drive_id",
+           return_value="REPLACE_WITH_JAD12_INBOX_FOLDER_ID")
+    def test_transform_placeholder_returns_empty(self, mock_id):
+        from pipeline.transforms.trade import transform
+        result = transform()
+        assert isinstance(result, pd.DataFrame)
+        assert result.empty
+
+
+# ---------------------------------------------------------------------------
+# Trade by commodity (METS HS) transform tests
+# ---------------------------------------------------------------------------
+
+class TestTradeHsTransform:
+    """Test the METS wide->long melt (ported from prep_hs.R)."""
+
+    def _make_clean_mets(self):
+        """A cleaned METS frame: metadata cols + month columns."""
+        return pd.DataFrame([
+            {"state": "PULAU PINANG", "chapter": "29", "partner_country": "BAHRAIN",
+             "jan_2024": 0, "feb_2024": 25116},
+            {"state": "PULAU PINANG", "chapter": "5", "partner_country": "CHINA",
+             "jan_2024": 100, "feb_2024": 200},
+            {"state": "PEN M'SIA", "chapter": "29", "partner_country": "TOTAL",
+             "jan_2024": 999, "feb_2024": 999},  # aggregate -> dropped
+        ])
+
+    def _reshape(self):
+        from pipeline.transforms.trade_hs import _reshape_mets, OUTPUT_COLUMNS
+        out = _reshape_mets(self._make_clean_mets(), "exports")
+        return out, OUTPUT_COLUMNS
+
+    def test_output_columns_exact(self):
+        out, expected = self._reshape()
+        assert list(out.columns) == expected
+
+    def test_pen_msia_excluded(self):
+        out, _ = self._reshape()
+        states = {str(s).upper().replace(" ", "").replace("'", "") for s in out["state"]}
+        assert "PENMSIA" not in states
+
+    def test_months_parsed(self):
+        out, _ = self._reshape()
+        assert set(out["month"]) == {
+            pd.Timestamp("2024-01-01"), pd.Timestamp("2024-02-01")
+        }
+
+    def test_hs_zero_padded(self):
+        out, _ = self._reshape()
+        assert set(out["hs"]) == {"29", "05"}
+
+    def test_type_of_trade_constant(self):
+        out, _ = self._reshape()
+        assert set(out["type_of_trade"]) == {"exports"}
+
+    def test_row_count(self):
+        # 2 kept rows x 2 month columns
+        out, _ = self._reshape()
+        assert len(out) == 4
+
+    def test_parse_month_token_variants(self):
+        from pipeline.transforms.trade_hs import _parse_month_token
+        assert _parse_month_token("jan_2024") == pd.Timestamp("2024-01-01")
+        assert _parse_month_token("2024_03") == pd.Timestamp("2024-03-01")
+        assert _parse_month_token("01_2024") == pd.Timestamp("2024-01-01")
+        assert _parse_month_token("chapter") is None
+
+    def test_extract_trade_type(self):
+        from pipeline.transforms.trade_hs import _extract_trade_type
+        assert _extract_trade_type("2024_exports.csv") == "exports"
+        assert _extract_trade_type("penang_imports_2024.csv") == "imports"
+        assert _extract_trade_type("random.csv") is None
+
+    @patch("pipeline.transforms.trade_hs.get_drive_id",
+           return_value="REPLACE_WITH_METS_INBOX_FOLDER_ID")
+    def test_transform_placeholder_returns_empty(self, mock_id):
+        from pipeline.transforms.trade_hs import transform
+        result = transform()
+        assert isinstance(result, pd.DataFrame)
+        assert result.empty
