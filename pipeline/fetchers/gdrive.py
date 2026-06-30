@@ -38,6 +38,59 @@ def _get_credentials():
     return Credentials.from_service_account_file(creds_path, scopes=scopes)
 
 
+def list_drive_folder(
+    folder_id: str, retries: int = _DEFAULT_RETRIES,
+) -> list[dict]:
+    """List non-trashed files directly inside a Google Drive folder.
+
+    Returns a list of ``{"id": ..., "name": ..., "mimeType": ...}`` dicts,
+    sorted by name. Used by the "inbox folder" pattern where a human drops raw
+    publication files into a shared Drive folder and the pipeline reshapes every
+    file it finds. Handles paging and shared drives.
+    Retries with exponential backoff on transient failures.
+    """
+    from googleapiclient.discovery import build
+
+    creds = _get_credentials()
+    service = build("drive", "v3", credentials=creds)
+    query = f"'{folder_id}' in parents and trashed = false"
+
+    for attempt in range(retries):
+        try:
+            files: list[dict] = []
+            page_token = None
+            while True:
+                response = (
+                    service.files()
+                    .list(
+                        q=query,
+                        fields="nextPageToken, files(id, name, mimeType)",
+                        includeItemsFromAllDrives=True,
+                        supportsAllDrives=True,
+                        pageSize=1000,
+                        pageToken=page_token,
+                    )
+                    .execute()
+                )
+                files.extend(response.get("files", []))
+                page_token = response.get("nextPageToken")
+                if not page_token:
+                    break
+            files.sort(key=lambda f: f.get("name", ""))
+            logger.info("Listed %d files in Drive folder %s", len(files), folder_id)
+            return files
+        except Exception as e:
+            if attempt == retries - 1:
+                raise
+            wait = _DEFAULT_BACKOFF_BASE ** (attempt + 1)
+            logger.warning(
+                "Attempt %d failed listing folder %s: %s — retrying in %ds",
+                attempt + 1, folder_id, e, wait,
+            )
+            time.sleep(wait)
+    raise RuntimeError(f"Failed to list folder {folder_id} after {retries} retries")
+
+
 def download_excel_from_drive(
     file_id: str, retries: int = _DEFAULT_RETRIES,
 ) -> pd.ExcelFile:

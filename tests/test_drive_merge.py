@@ -33,3 +33,19 @@ def test_never_shrinks_and_noop_when_current():
     new = pd.DataFrame({"date": ["01/05/2026"], "division": ["01"], "index": [122.0]})
     out = merge_new_periods(cur, new, "date")
     assert len(out) == len(cur)  # nothing new -> unchanged
+
+
+def test_select_new_period_rows_returns_only_new_and_matches_format():
+    from pipeline.loaders.drive_merge import select_new_period_rows
+    cur = pd.DataFrame({
+        "State": ["Johor"], "Date": ["2025-12-01"], "Value (RM mil)": [1.0],
+    })
+    new = pd.DataFrame({
+        "State": ["Johor", "Johor"],
+        "Date": ["01/12/2025", "01/01/2026"],   # dd/mm/yyyy in; Dec overlaps
+        "Value (RM mil)": [1.0, 2.0],
+    })
+    add = select_new_period_rows(cur, new, "Date")
+    assert len(add) == 1                       # only Jan 2026
+    assert add.iloc[0]["Date"] == "2026-01-01"  # reformatted to cur's ISO style
+    assert list(add.columns) == list(cur.columns)  # cur column order

@@ -97,6 +97,61 @@ def write_sheet(
             time.sleep(wait)
 
 
+def append_new_months_to_sheet(
+    df_new: pd.DataFrame,
+    spreadsheet_id: str,
+    sheet_name: str,
+    date_col: str = "Date",
+    retries: int = _DEFAULT_RETRIES,
+) -> None:
+    """Append only the months not already present in the sheet tab, in place.
+
+    Preserves existing rows and their formatting (never rewrites history).
+    New rows are matched to the existing date style and column order, and
+    written with USER_ENTERED so dates/numbers land as the same cell types
+    already in the sheet. NaN values become blank cells.
+
+    Used for accumulating sources where a full overwrite would be unsafe
+    (e.g. trade — the sheet carries history back to 2018 that a single
+    monthly drop must not clobber).
+    """
+    from pipeline.loaders.drive_merge import select_new_period_rows
+
+    for attempt in range(retries):
+        try:
+            gc = _get_gspread_client()
+            ws = gc.open_by_key(spreadsheet_id).worksheet(sheet_name)
+            values = ws.get_all_values()
+            if not values:  # empty tab — seed it with header + all rows
+                write_sheet(df_new, spreadsheet_id, sheet_name)
+                return
+            header = values[0]
+            cur = pd.DataFrame(values[1:], columns=header)
+            add = select_new_period_rows(cur, df_new, date_col)
+            if add.empty:
+                logger.info("Sheet '%s' already current (%d rows)", sheet_name, len(cur))
+                return
+            rows = [
+                ["" if pd.isna(v) else v for v in row]
+                for row in add[header].itertuples(index=False, name=None)
+            ]
+            ws.append_rows(rows, value_input_option="USER_ENTERED")
+            logger.info(
+                "Appended %d rows to sheet '%s' in %s (%d -> %d)",
+                len(rows), sheet_name, spreadsheet_id, len(cur), len(cur) + len(rows),
+            )
+            return
+        except Exception as e:
+            if attempt == retries - 1:
+                raise
+            wait = _DEFAULT_BACKOFF_BASE ** (attempt + 1)
+            logger.warning(
+                "Attempt %d failed appending to '%s' in %s: %s — retrying in %ds",
+                attempt + 1, sheet_name, spreadsheet_id, e, wait,
+            )
+            time.sleep(wait)
+
+
 def write_to_main_workbook(df: pd.DataFrame, sheet_key: str) -> None:
     """Write a DataFrame to a named sheet in the main dashboard workbook.
 
