@@ -1938,3 +1938,53 @@ class TestTradeHsTransform:
         result = transform()
         assert isinstance(result, pd.DataFrame)
         assert result.empty
+
+
+# ---------------------------------------------------------------------------
+# GDP per capita by state (Jad 44 inbox) transform tests
+# ---------------------------------------------------------------------------
+
+class TestGDPCapitaStatesJad44:
+    """Test the Jad 44 GDP-per-capita reshape (inbox publication)."""
+
+    def _make_raw(self):
+        # Mimic the Jad 43-44 sheet: a JADUAL 44 marker, a title row that also
+        # mentions the span (must NOT be picked as the header), the year header,
+        # two state rows, then the Malaysia total row.
+        rows = [
+            [None]*7,
+            [None, "JADUAL", "44", "KDNK per kapita", None, None, None],
+            [None, "TABLE", None, "GDP per capita by state, 2015-2017", None, None, None],
+            [None]*7,
+            [None, None, "State", None, "2015", "2016", "2017e"],   # year header
+            [None, "1.", "Johor", None, 100.0, 110.0, 120.0],
+            [None, "2.", "Kedah", None, 50.0, 55.0, 60.0],
+            [None, None, None, None, 75.0, 80.0, 90.0],             # Malaysia total
+        ]
+        return pd.DataFrame(rows)
+
+    def _reshape(self):
+        from pipeline.transforms.gdp_capita_states import _reshape_jad44, OUTPUT_COLUMNS
+        return _reshape_jad44(self._make_raw()), OUTPUT_COLUMNS
+
+    def test_columns_and_shape(self):
+        out, cols = self._reshape()
+        assert list(out.columns) == cols
+        assert len(out) == 6                      # 2 states x 3 years
+        assert set(out["State"]) == {"Johor", "Kedah"}
+
+    def test_per_capita_and_malaysia_broadcast(self):
+        out, _ = self._reshape()
+        j15 = out[(out.State == "Johor") & (out.Year == 2015)].iloc[0]
+        assert j15["GDP per capita (RM)"] == 100.0
+        assert j15["GDP per capita (Malaysia)"] == 75.0   # Malaysia row broadcast
+
+    def test_data_status_from_suffix(self):
+        out, _ = self._reshape()
+        assert set(out[out.Year == 2017]["Data status"]) == {"estimate"}
+        assert set(out[out.Year == 2015]["Data status"]) == {""}     # final = blank
+
+    def test_title_row_not_mistaken_for_header(self):
+        # The title row mentions "2015-2017" but the parser must use the year row.
+        out, _ = self._reshape()
+        assert set(out["Year"]) == {2015, 2016, 2017}
