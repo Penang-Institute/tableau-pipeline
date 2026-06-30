@@ -41,6 +41,13 @@ OUTPUT_COLUMNS = [
     "Data status", "Updated as of",
 ]
 
+# The publication writes "W.P. ..."; the Sheet/Tableau (and the PDF spec) use
+# "WP ..." — normalise so the upsert keys match and no duplicate states appear.
+STATE_FIXES = {
+    "W.P. Kuala Lumpur": "WP Kuala Lumpur",
+    "W.P. Labuan": "WP Labuan",
+}
+
 
 def _is_placeholder(value: str) -> bool:
     return (not value) or value.startswith(_PLACEHOLDER_PREFIX)
@@ -116,6 +123,7 @@ def _reshape_jad44(raw: pd.DataFrame) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
     df = pd.DataFrame(rows, columns=["State", "Year", "GDP per capita (RM)", "Data status"])
+    df["State"] = df["State"].replace(STATE_FIXES)
     df["GDP per capita (Malaysia)"] = df["Year"].map(malaysia)
     df["Updated as of"] = pd.Timestamp.today().year
     return df[OUTPUT_COLUMNS]
