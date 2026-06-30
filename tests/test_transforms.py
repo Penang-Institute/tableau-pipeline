@@ -1872,64 +1872,51 @@ class TestTradeJad12Transform:
 # ---------------------------------------------------------------------------
 
 class TestTradeHsTransform:
-    """Test the METS wide->long melt (ported from prep_hs.R)."""
+    """Test the METS multi-trade-flow melt (real 2026 format)."""
 
-    def _make_clean_mets(self):
-        """A cleaned METS frame: metadata cols + month columns."""
-        return pd.DataFrame([
-            {"state": "PULAU PINANG", "chapter": "29", "partner_country": "BAHRAIN",
-             "jan_2024": 0, "feb_2024": 25116},
-            {"state": "PULAU PINANG", "chapter": "5", "partner_country": "CHINA",
-             "jan_2024": 100, "feb_2024": 200},
-            {"state": "PEN M'SIA", "chapter": "29", "partner_country": "TOTAL",
-             "jan_2024": 999, "feb_2024": 999},  # aggregate -> dropped
-        ])
+    def _make_mets(self):
+        # Columns as produced by _read_mets_file (cleaned); one month, both directions.
+        return pd.DataFrame({
+            "no": ["1", "2", "3"],
+            "state": ["PULAU PINANG", "PULAU PINANG", "PEN M'SIA"],
+            "chapter": ['="01"', '="5"', '="29"'],       # Excel formula + single digit
+            "chapter_description": ["LIVE ANIMALS", "FISH", "TOTAL"],
+            "partner_country_name": ["CANADA", "JAPAN", "TOTAL"],
+            "may_2026_imports_value_myr": ["0", "8809", "999"],
+            "may_2026_exports_value_myr": ["4894", "0", "999"],
+        })
 
     def _reshape(self):
         from pipeline.transforms.trade_hs import _reshape_mets, OUTPUT_COLUMNS
-        out = _reshape_mets(self._make_clean_mets(), "exports")
-        return out, OUTPUT_COLUMNS
+        return _reshape_mets(self._make_mets()), OUTPUT_COLUMNS
 
-    def test_output_columns_exact(self):
-        out, expected = self._reshape()
-        assert list(out.columns) == expected
+    def test_schema_and_both_directions(self):
+        out, cols = self._reshape()
+        assert list(out.columns) == cols
+        assert len(out) == 4                      # 2 Penang rows x 2 directions
+        assert set(out["type_of_trade"]) == {"imports", "exports"}
 
     def test_pen_msia_excluded(self):
         out, _ = self._reshape()
-        states = {str(s).upper().replace(" ", "").replace("'", "") for s in out["state"]}
-        assert "PENMSIA" not in states
+        norm = {str(s).upper().replace(" ", "").replace("'", "") for s in out["state"]}
+        assert "PENMSIA" not in norm
 
-    def test_months_parsed(self):
+    def test_hs_cleaned_and_padded(self):
         out, _ = self._reshape()
-        assert set(out["month"]) == {
-            pd.Timestamp("2024-01-01"), pd.Timestamp("2024-02-01")
-        }
+        assert set(out["hs"]) == {"01", "05"}      # ="01" -> 01 ; ="5" -> 05
 
-    def test_hs_zero_padded(self):
+    def test_month_and_direction_from_columns(self):
         out, _ = self._reshape()
-        assert set(out["hs"]) == {"29", "05"}
+        assert set(out["month"]) == {pd.Timestamp("2026-05-01")}
+        imp = out[(out.country == "CANADA") & (out.type_of_trade == "imports")].iloc[0]
+        exp = out[(out.country == "CANADA") & (out.type_of_trade == "exports")].iloc[0]
+        assert imp["trade_values"] == 0
+        assert exp["trade_values"] == 4894
 
-    def test_type_of_trade_constant(self):
-        out, _ = self._reshape()
-        assert set(out["type_of_trade"]) == {"exports"}
-
-    def test_row_count(self):
-        # 2 kept rows x 2 month columns
-        out, _ = self._reshape()
-        assert len(out) == 4
-
-    def test_parse_month_token_variants(self):
-        from pipeline.transforms.trade_hs import _parse_month_token
-        assert _parse_month_token("jan_2024") == pd.Timestamp("2024-01-01")
-        assert _parse_month_token("2024_03") == pd.Timestamp("2024-03-01")
-        assert _parse_month_token("01_2024") == pd.Timestamp("2024-01-01")
-        assert _parse_month_token("chapter") is None
-
-    def test_extract_trade_type(self):
-        from pipeline.transforms.trade_hs import _extract_trade_type
-        assert _extract_trade_type("2024_exports.csv") == "exports"
-        assert _extract_trade_type("penang_imports_2024.csv") == "imports"
-        assert _extract_trade_type("random.csv") is None
+    def test_parse_month(self):
+        from pipeline.transforms.trade_hs import _parse_month
+        assert _parse_month("may_2026_imports_value_myr") == pd.Timestamp("2026-05-01")
+        assert _parse_month("no") is None
 
     @patch("pipeline.transforms.trade_hs.get_drive_id",
            return_value="REPLACE_WITH_METS_INBOX_FOLDER_ID")
