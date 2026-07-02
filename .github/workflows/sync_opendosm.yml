@@ -1,0 +1,73 @@
+name: Sync OpenDOSM to Google Drive
+
+on:
+  schedule:
+    # Run every Monday at 2:00 AM MYT (Sunday 6:00 PM UTC)
+    - cron: "0 18 * * 0"
+  workflow_dispatch:
+    inputs:
+      transforms:
+        description: "Transforms to run (blank = all)"
+        required: false
+        default: ""
+      dry_run:
+        description: "Dry run (no uploads)"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Job-level env so the secret is visible to the notify step's `if:`
+    # (the `secrets` context is NOT available in step `if` conditions).
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Write Google credentials
+        env:
+          GOOGLE_CREDS: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: echo "$GOOGLE_CREDS" > pipeline/config/service_account.json
+
+      - name: Run pipeline
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: pipeline/config/service_account.json
+          INPUT_TRANSFORMS: ${{ github.event.inputs.transforms }}
+          INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          ARGS="$INPUT_TRANSFORMS"
+          if [ "$INPUT_DRY_RUN" = "true" ]; then
+            ARGS="$ARGS --dry-run"
+          fi
+          python -m pipeline.orchestrator --continue-on-error $ARGS
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f pipeline/config/service_account.json
+
+      - name: Notify on failure
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        uses: slackapi/slack-github-action@v2.0.0
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        with:
+          webhook: ${{ env.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": ":red_circle: OpenDOSM sync failed\nRun: ${{ env.RUN_URL }}"
+            }
