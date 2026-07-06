@@ -53,6 +53,18 @@ def _get_gspread_client():
     return gspread.authorize(creds)
 
 
+def dataframe_to_rows(df: pd.DataFrame) -> list[list[str]]:
+    """Sheet-safe cell values: NaN/NaT/None -> '' and everything else -> str.
+
+    pandas 3's astype(str) keeps missing values as float NaN (pandas 2 turned
+    them into the literal string 'nan'), and raw NaN/inf floats break the
+    Sheets API's JSON body. Blanking missing values first is correct on both
+    versions — and empty cells beat literal 'nan' text in the sheet anyway.
+    """
+    out = df.astype(object)
+    return out.where(pd.notna(out), "").astype(str).values.tolist()
+
+
 def write_sheet(
     df: pd.DataFrame,
     spreadsheet_id: str,
@@ -80,7 +92,7 @@ def write_sheet(
             # Convert all values AND headers to strings to avoid JSON errors
             # (a NaN column name from a read sheet is a non-JSON-compliant float).
             header = [str(c) for c in df.columns]
-            values = df.astype(str).values.tolist()
+            values = dataframe_to_rows(df)
             worksheet.update([header] + values)
 
             logger.info(
@@ -179,7 +191,7 @@ def upsert_rows_to_sheet(
                 return
             header = values[0]
             cur = pd.DataFrame(values[1:], columns=header)
-            new = df_new[header].astype(str)
+            new = pd.DataFrame(dataframe_to_rows(df_new[header]), columns=header)
 
             def _key(df: pd.DataFrame):
                 return df[key_cols].astype(str).agg("␟".join, axis=1)
