@@ -16,7 +16,9 @@ Source: https://storage.data.gov.my/healthcare/hospital_bed_utlisation_state.par
 Manual: Google Sheet main workbook, tab "Utilisation_bystate"
 Output:
   - Google Sheet "utilisation_opendosm" (raw OpenDOSM data)
-  - Google Sheet "utilisation_by_state" (filtered manual data: Public/Hospital)
+
+The "Utilisation_bystate" manual tab is INPUT ONLY — never written back
+(a prior write-back cleared it via clear-then-failed-update).
 """
 
 from __future__ import annotations
