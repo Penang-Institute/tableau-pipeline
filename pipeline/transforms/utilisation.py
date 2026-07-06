@@ -73,6 +73,15 @@ def transform_manual() -> pd.DataFrame | None:
         )
         return None
 
+    # Guard against an empty/malformed manual tab (e.g. cleared by a prior
+    # failed write) — degrade gracefully instead of KeyError on 'Sector'.
+    if manual.empty or "Sector" not in manual.columns:
+        logger.warning(
+            "Manual sheet '%s' is empty or missing 'Sector' — skipping manual data",
+            _MANUAL_SHEET_TAB,
+        )
+        return None
+
     # Replace dash/N/A sentinels with NaN (mirrors R: na = c("-", "N/A"))
     manual = manual.replace({"-": pd.NA, "N/A": pd.NA})
 
@@ -120,19 +129,17 @@ def load(
 ) -> None:
     """Write utilisation data to Google Sheets.
 
+    Only the raw OpenDOSM dataset is written, to "utilisation_opendosm" —
+    matching the R original (utilisation_bystate_fixed.R). The manual
+    "Utilisation_bystate" tab is INPUT ONLY: the prior port wrote a filtered
+    copy back onto it, and clear-then-failed-update wiped the manual data.
+    manual_df is kept in the signature for compatibility but never persisted.
+
     Args:
         df: Raw OpenDOSM data written to "utilisation_opendosm".
-        manual_df: Filtered manual data written to "utilisation_by_state".
-            Skipped if None.
+        manual_df: Read but not written back (see above).
     """
     write_to_main_workbook(df, "utilisation_opendosm")
-
-    if manual_df is not None:
-        write_to_main_workbook(manual_df, "utilisation_by_state")
-        logger.info(
-            "Wrote %d rows of filtered manual data to utilisation_by_state",
-            len(manual_df),
-        )
 
 
 def main() -> pd.DataFrame:
