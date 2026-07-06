@@ -49,3 +49,16 @@ def test_select_new_period_rows_returns_only_new_and_matches_format():
     assert len(add) == 1                       # only Jan 2026
     assert add.iloc[0]["Date"] == "2026-01-01"  # reformatted to cur's ISO style
     assert list(add.columns) == list(cur.columns)  # cur column order
+
+
+def test_schema_drift_does_not_crash_when_live_file_has_extra_columns():
+    # Live PPI file carries series/index_sa the current transform dropped.
+    from pipeline.loaders.drive_merge import merge_new_periods
+    cur = pd.DataFrame({
+        "date": ["2025-12-01"], "index": [100.0], "series": ["abs"], "index_sa": [99.0],
+    })
+    new = pd.DataFrame({"date": ["01/01/2026"], "index": [101.0]})  # 2 cols only
+    merged = merge_new_periods(cur, new, "date")
+    assert len(merged) == 2                     # appended, not KeyError
+    assert merged.iloc[1]["index"] == 101.0     # real metric preserved
+    assert pd.isna(merged.iloc[1]["series"])    # dropped column NaN-filled

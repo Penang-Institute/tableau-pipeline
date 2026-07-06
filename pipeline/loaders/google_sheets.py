@@ -77,8 +77,9 @@ def write_sheet(
 
             worksheet.clear()
 
-            # Convert all values to strings to avoid JSON serialization issues
-            header = df.columns.tolist()
+            # Convert all values AND headers to strings to avoid JSON errors
+            # (a NaN column name from a read sheet is a non-JSON-compliant float).
+            header = [str(c) for c in df.columns]
             values = df.astype(str).values.tolist()
             worksheet.update([header] + values)
 
@@ -225,6 +226,50 @@ def get_drive_folder_id(key: str) -> str:
     from pipeline.config.registry import get_drive_folder_id as _get_folder_id
 
     return _get_folder_id(key)
+
+
+def update_drive_file(
+    file_id: str,
+    file_path: str | Path,
+    retries: int = _DEFAULT_RETRIES,
+) -> None:
+    """Replace an existing Drive file's content in place, by ID.
+
+    The Python equivalent of R's googledrive::drive_update(as_id(id), media=path):
+    keeps the same file ID/name (so any Tableau link stays intact) and only
+    swaps the bytes. Use when the target is a known file, not a folder.
+    """
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaFileUpload
+    from google.oauth2.service_account import Credentials
+
+    creds_path = os.environ.get(
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        str(_CONFIG_DIR / "service_account.json"),
+    )
+    creds = Credentials.from_service_account_file(
+        creds_path, scopes=["https://www.googleapis.com/auth/drive"]
+    )
+    service = build("drive", "v3", credentials=creds)
+
+    for attempt in range(retries):
+        try:
+            service.files().update(
+                fileId=file_id,
+                media_body=MediaFileUpload(str(file_path), mimetype="text/csv"),
+                supportsAllDrives=True,
+            ).execute()
+            logger.info("Updated Drive file %s from %s", file_id, file_path)
+            return
+        except Exception as e:
+            if attempt == retries - 1:
+                raise
+            wait = _DEFAULT_BACKOFF_BASE ** (attempt + 1)
+            logger.warning(
+                "Attempt %d failed updating file %s: %s — retrying in %ds",
+                attempt + 1, file_id, e, wait,
+            )
+            time.sleep(wait)
 
 
 def upload_to_drive(

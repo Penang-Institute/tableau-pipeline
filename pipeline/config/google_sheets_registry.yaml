@@ -6,7 +6,9 @@ main_workbook:
   id: "1cJe-flqOiDEA9Q9MFe2LCIcY8PmmEc_M3mt-TD7eKQM"
   sheets:
     cpi_by_state: "CPI_byState"
-    utilisation_by_state: "Utilisation_bystate"
+    # NOTE: "Utilisation_bystate" is Hajar's manual INPUT tab — read-only.
+    # Deliberately NOT mapped here so it can never be a write target (a prior
+    # write-back cleared it). utilisation.py reads it directly by name.
     utilisation_opendosm: "utilisation_opendosm"
     utilisation_by_district: "Utilisation_bydistrict"
     facilities_by_state: "facilities_by_state"
