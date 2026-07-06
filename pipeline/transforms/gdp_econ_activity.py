@@ -122,6 +122,11 @@ def transform() -> dict[str, pd.DataFrame]:
         "Sub Kind of Economic Activity": "Sub-sectors",
         "Value RM Million": "GDP (RM mil)",
     })
+    # Coerce to numeric before any groupby-sum ('n.a'/blank cells else make the
+    # column object dtype -> "int + str" TypeError in group_sum).
+    state_econ_act["GDP (RM mil)"] = pd.to_numeric(
+        state_econ_act["GDP (RM mil)"], errors="coerce"
+    )
     state_econ_act = state_econ_act[
         ["Updated as of", "Status of data", "Base year", "Year", "State",
          "Economic activity", "Sub-sectors", "GDP (RM mil)"]
@@ -212,7 +217,7 @@ def transform() -> dict[str, pd.DataFrame]:
                 col_map[c] = "Economic activity"
         msia_combined = msia_combined.rename(columns=col_map)
 
-        for c in ["Year", "Base year"]:
+        for c in ["Year", "Base year", "GDP (RM mil)"]:
             if c in msia_combined.columns:
                 msia_combined[c] = pd.to_numeric(
                     msia_combined[c], errors="coerce"

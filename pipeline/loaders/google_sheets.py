@@ -77,8 +77,9 @@ def write_sheet(
 
             worksheet.clear()
 
-            # Convert all values to strings to avoid JSON serialization issues
-            header = df.columns.tolist()
+            # Convert all values AND headers to strings to avoid JSON errors
+            # (a NaN column name from a read sheet is a non-JSON-compliant float).
+            header = [str(c) for c in df.columns]
             values = df.astype(str).values.tolist()
             worksheet.update([header] + values)
 

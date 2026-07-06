@@ -53,7 +53,16 @@ def select_new_period_rows(
 
     existing_periods = set(_period(cur[date_col]))
     add = new[~_period(new[date_col]).isin(existing_periods)]
-    return add[list(cur.columns)]
+    # ponytail: live file may carry columns the transform no longer emits
+    # (schema drift, e.g. PPI dropped series/index_sa). Select shared columns;
+    # concat NaN-fills the rest, so drift degrades instead of KeyError-crashing.
+    missing = [c for c in cur.columns if c not in add.columns]
+    if missing:
+        logger.warning(
+            "Drive file has columns the new data lacks %s — new rows blank there",
+            missing,
+        )
+    return add[[c for c in cur.columns if c in add.columns]]
 
 
 def merge_new_periods(

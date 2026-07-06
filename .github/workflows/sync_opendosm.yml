@@ -46,6 +46,9 @@ jobs:
       - name: Run pipeline
         env:
           GOOGLE_APPLICATION_CREDENTIALS: pipeline/config/service_account.json
+          # Authenticated GitHub API = 5000 req/hr vs 60 anon; hospitals transform
+          # fetches bedutil_facility.csv once per commit and was hitting the anon limit.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_TRANSFORMS: ${{ github.event.inputs.transforms }}
           INPUT_DRY_RUN: ${{ github.event.inputs.dry_run }}
         run: |
