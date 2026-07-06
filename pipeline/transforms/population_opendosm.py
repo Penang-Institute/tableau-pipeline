@@ -20,7 +20,7 @@ import pandas as pd
 
 from pipeline.config.registry import get_drive_id, get_sheet_id
 from pipeline.fetchers.opendosm import fetch_parquet
-from pipeline.loaders.google_sheets import write_sheet, upload_to_drive
+from pipeline.loaders.google_sheets import write_sheet, update_drive_file
 from pipeline.loaders.file_writer import write_csv
 from pipeline.utils.opendosm_helpers import (
     clean_opendosm as _clean_opendosm,
@@ -197,12 +197,14 @@ def transform() -> dict[str, pd.DataFrame]:
 def load(dfs: dict[str, pd.DataFrame]) -> None:
     """Write population data to Google Sheets."""
     if "state" in dfs and not dfs["state"].empty:
-        # Write to Drive as CSV (equivalent to R's drive_update)
+        # Update the existing Drive file in place, by ID — matches R's
+        # drive_update(as_id(...)). The prior code uploaded to a folder ("")
+        # which 404'd; DRIVE_FILE_ID is the real target the R script used.
         tmp_path = write_csv(dfs["state"], "population_by_state_age_ethnicity_sex.csv", date_tag=True)
         try:
-            upload_to_drive(tmp_path, "", file_name="population_by_state_age_ethnicity_sex.csv", date_tag=True)
+            update_drive_file(DRIVE_FILE_ID, tmp_path)
         except Exception as e:
-            logger.warning("Failed to upload state CSV to Drive: %s", e)
+            logger.warning("Failed to update state CSV on Drive: %s", e)
 
     sheet_map = {
         "malaysia": "pop-msia-age_sex_ethnicity",
