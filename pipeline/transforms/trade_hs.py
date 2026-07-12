@@ -30,6 +30,7 @@ import pandas as pd
 
 from pipeline.config.registry import get_drive_id
 from pipeline.fetchers.gdrive import download_file_from_drive, list_drive_folder
+from pipeline.loaders.drive_merge import append_periods_to_drive_csv
 from pipeline.loaders.file_writer import write_csv, write_parquet
 
 logger = logging.getLogger(__name__)
@@ -196,6 +197,17 @@ def transform() -> pd.DataFrame:
     return out
 
 
+def _to_live_format(df: pd.DataFrame) -> pd.DataFrame:
+    """Restyle rows to the live Online Stats CSV's 26-year conventions.
+
+    That file stores HS chapters unpadded ("1", "9", "10") — appending our
+    zero-padded "01" would split each chapter into two series in Tableau.
+    """
+    live = df.copy()
+    live["hs"] = live["hs"].astype(str).str.lstrip("0")
+    return live
+
+
 def load(df: pd.DataFrame) -> None:
     """Write the commodity CSV/Parquet (month formatted yyyy/mm/dd per the PDF)."""
     if df.empty:
@@ -204,6 +216,17 @@ def load(df: pd.DataFrame) -> None:
     out["month"] = pd.to_datetime(out["month"]).dt.strftime("%Y/%m/%d")
     write_csv(out, "penang_monthly_exim_hs_country.csv", date_tag=True)
     write_parquet(df, "penang_monthly_exim_hs_country.parquet", date_tag=True)
+
+    # Live Tableau source ("Online Stats > Penang > Monthly"): append-only,
+    # existing rows untouched; months already present are skipped.
+    folder_id = get_drive_id("trade_hs", "online_stats_folder")
+    if _is_placeholder(folder_id):
+        logger.warning("Online Stats folder not configured — skipping live CSV append.")
+        return
+    append_periods_to_drive_csv(
+        _to_live_format(df), folder_id,
+        "penang_monthly_exim_hs_country.csv", date_col="month",
+    )
 
 
 def main() -> pd.DataFrame:
