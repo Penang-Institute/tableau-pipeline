@@ -95,6 +95,9 @@ transforms:
       # Inbox folder where Hajar drops the raw METS Online Penang HS CSV files.
       # Create the folder in the shared "Raw Data" drive and paste its ID here.
       inbox: "1VSr1GksPPExkFgI6fnp6fk9w_oRpZ4qt"
+      # "Online Stats > Penang > Monthly" — holds the live Tableau source
+      # penang_monthly_exim_hs_country.csv that the pipeline appends into.
+      online_stats_folder: "1GmV5OnTkQFcM-t0spl60lb2OO7CIBFm5"
 
   airports:
     sheets:

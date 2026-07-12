@@ -1975,3 +1975,44 @@ class TestGDPCapitaStatesJad44:
         # The title row mentions "2015-2017" but the parser must use the year row.
         out, _ = self._reshape()
         assert set(out["Year"]) == {2015, 2016, 2017}
+
+    def test_a23_marker_new_edition(self):
+        # 2025+ editions renumber "JADUAL 44" to "TABLE A23" (per Hajar, Jul 2026).
+        from pipeline.transforms.gdp_capita_states import _reshape_jad44
+        raw = self._make_raw()
+        raw.iat[1, 1], raw.iat[1, 2] = "TABLE", "A23"
+        out = _reshape_jad44(raw)
+        assert len(out) == 6 and set(out["State"]) == {"Johor", "Kedah"}
+
+    def test_percapita_title_fallback(self):
+        # No JADUAL/TABLE marker at all — anchor on the per-capita title text.
+        from pipeline.transforms.gdp_capita_states import _reshape_jad44
+        raw = self._make_raw()
+        raw.iat[1, 1], raw.iat[1, 2] = None, None      # kill the marker row
+        out = _reshape_jad44(raw)                       # row 2 title has "per capita"
+        assert len(out) == 6 and set(out["Year"]) == {2015, 2016, 2017}
+
+    def test_sheet_finder_accepts_both_namings(self):
+        from pipeline.transforms.gdp_capita_states import _find_jad4344_sheet
+        assert _find_jad4344_sheet(["Contents", "Jad 43-44"]) == "Jad 43-44"
+        assert _find_jad4344_sheet(["Contents", "A22-A23"]) == "A22-A23"
+        assert _find_jad4344_sheet(["Contents", "A23"]) == "A23"
+        assert _find_jad4344_sheet(["Contents"]) is None
+
+
+class TestTradeHsLiveFormat:
+    """The live Online Stats CSV stores HS unpadded — appends must match."""
+
+    def test_hs_unpadded_for_live_file(self):
+        from pipeline.transforms.trade_hs import _to_live_format
+        df = pd.DataFrame({
+            "state": ["PULAU PINANG"] * 3,
+            "type_of_trade": ["exports"] * 3,
+            "hs": ["01", "09", "10"],
+            "country": ["JAPAN"] * 3,
+            "month": pd.to_datetime(["2026-05-01"] * 3),
+            "trade_values": [1, 2, 3],
+        })
+        out = _to_live_format(df)
+        assert list(out["hs"]) == ["1", "9", "10"]
+        assert list(df["hs"]) == ["01", "09", "10"]   # source untouched
