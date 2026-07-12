@@ -8,7 +8,8 @@ publication no longer covers (e.g. 2005–2014) and applying revisions to the
 years it does (2015 onward).
 
 Source : Drive inbox folder (registry gdp_capita_states.drive_files.inbox) —
-         "Table of GDP by State, YYYY-YYYY.xlsx", sheet "Jad 43-44".
+         "Table of GDP by State, YYYY-YYYY.xlsx", sheet "Jad 43-44"
+         (≤2024 editions) or "A22-A23" (2025+ editions, renumbered by DOSM).
 Output : Google Sheet 1Ua9_28dpHeWlea9QfbkYrGSSuBtwL2pXOWobpX8A_1Q, tab "data"
          columns: State | Year | GDP per capita (RM) | GDP per capita (Malaysia)
                   | Data status | Updated as of
@@ -62,12 +63,15 @@ def _year_cell(v) -> tuple[int, str] | None:
 
 
 def _find_jad4344_sheet(sheet_names: list[str]) -> str | None:
+    """Locate the per-capita sheet: "Jad 43-44" (≤2024 editions) or "A22-A23"
+    (2025+ editions — DOSM renumbered the tables; per Hajar, Jul 2026)."""
     for s in sheet_names:
         c = s.replace(" ", "").lower()
-        if "43" in c and "44" in c:
+        if ("43" in c and "44" in c) or ("a22" in c and "a23" in c):
             return s
     for s in sheet_names:
-        if "44" in s:
+        c = s.replace(" ", "").lower()
+        if "44" in c or "a23" in c:
             return s
     return None
 
@@ -77,12 +81,20 @@ def _reshape_jad44(raw: pd.DataFrame) -> pd.DataFrame:
 
     Pure function (no I/O) — unit-testable with an in-memory fixture.
     """
-    j44 = next(
-        (i for i in range(len(raw))
-         if str(raw.iat[i, 1]).strip() == "JADUAL"
-         and str(raw.iat[i, 2]).strip().replace(".0", "") == "44"),
-        None,
-    )
+    def _is_marker(i: int) -> bool:
+        c1 = str(raw.iat[i, 1]).strip().upper()
+        c2 = str(raw.iat[i, 2]).strip().replace(".0", "").upper()
+        return c1 in ("JADUAL", "TABLE") and c2 in ("44", "A23")
+
+    def _is_percap_title(i: int) -> bool:
+        text = " ".join(str(v) for v in raw.iloc[i].tolist() if pd.notna(v)).lower()
+        return "per capita" in text or "per kapita" in text
+
+    # Old editions mark the block "JADUAL 44"; 2025+ renumber it "A23".
+    # Fall back to the per-capita title text if the marker style changes again.
+    j44 = next((i for i in range(len(raw)) if _is_marker(i)), None)
+    if j44 is None:
+        j44 = next((i for i in range(len(raw)) if _is_percap_title(i)), None)
     if j44 is None:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
 
