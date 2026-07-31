@@ -44,6 +44,20 @@ _MONTHS = {
 }
 
 
+# METS occasionally relabels a country. The dashboard's "Trading Partner
+# (Country)" control is a Tableau *parameter* with a hard-coded member list, so
+# an unmapped label is silently unselectable and its series splits in two at the
+# rename date. Map incoming METS spellings onto the parameter's vocabulary.
+# Adding an entry here is cheaper than editing the workbook.
+_COUNTRY_ALIASES = {
+    "ANTIGUA & BARBUDA": "ANTIGUA AND BARBUDA",
+    "OTHER COUNTRIES,NES": "OTHER COUNTRIES, NES.",
+    "UNITED STATE MINOR OUTLYING ISLANDS": "UNITED STATES MINOR OUTLYING ISLANDS",
+    # TURKEY -> TURKIYE was applied the other way round (the parameter was
+    # updated to the modern name), so METS's "TURKIYE" needs no mapping.
+}
+
+
 def _is_placeholder(value: str) -> bool:
     return (not value) or value.startswith(_PLACEHOLDER_PREFIX)
 
@@ -153,6 +167,7 @@ def _reshape_mets(df: pd.DataFrame) -> pd.DataFrame:
     long = long[~norm_state.isin(["", "PENMSIA"])]
 
     long["hs"] = _normalise_hs(long["hs"])
+    long["country"] = long["country"].replace(_COUNTRY_ALIASES)
     long["trade_values"] = pd.to_numeric(long["trade_values"], errors="coerce")
     return long[OUTPUT_COLUMNS].reset_index(drop=True)
 
@@ -197,17 +212,6 @@ def transform() -> pd.DataFrame:
     return out
 
 
-def _to_live_format(df: pd.DataFrame) -> pd.DataFrame:
-    """Restyle rows to the live Online Stats CSV's 26-year conventions.
-
-    That file stores HS chapters unpadded ("1", "9", "10") — appending our
-    zero-padded "01" would split each chapter into two series in Tableau.
-    """
-    live = df.copy()
-    live["hs"] = live["hs"].astype(str).str.lstrip("0")
-    return live
-
-
 def load(df: pd.DataFrame) -> None:
     """Write the commodity CSV/Parquet (month formatted yyyy/mm/dd per the PDF)."""
     if df.empty:
@@ -224,7 +228,7 @@ def load(df: pd.DataFrame) -> None:
         logger.warning("Online Stats folder not configured — skipping live CSV append.")
         return
     append_periods_to_drive_csv(
-        _to_live_format(df), folder_id,
+        df, folder_id,
         "penang_monthly_exim_hs_country.csv", date_col="month",
     )
 

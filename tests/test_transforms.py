@@ -1984,6 +1984,32 @@ class TestGDPCapitaStatesJad44:
         out = _reshape_jad44(raw)
         assert len(out) == 6 and set(out["State"]) == {"Johor", "Kedah"}
 
+    def _make_raw_2025(self):
+        # Real 2025 "A22-A23" layout: single-cell "Jadual A23:" marker, state names
+        # in col 1 (not 2), and a "2023'" revised-year tag. Mirrors the actual DOSM
+        # Jul-2026 publication that the old fixture did not capture.
+        rows = [
+            [None]*5,
+            ["Jadual A23: KDNK per kapita mengikut negeri, 2023-2025", None, None, None, None],
+            ["Table A23: GDP per capita by state at current prices, 2023-2025", None, None, None, None],
+            [None, "Negeri\nState", "2023'", "2024e", "2025p"],   # year header
+            ["1.", "Johor", 100.0, 110.0, 120.0],
+            ["7.", "Pulau Pinang", 72570.066, 76106.861, 80584.086],
+            [None, None, 75.0, 80.0, 90.0],                       # Malaysia total
+        ]
+        return pd.DataFrame(rows)
+
+    def test_2025_edition_real_layout(self):
+        # The A22-A23 block: state col shifted to 1, base year carries an apostrophe.
+        from pipeline.transforms.gdp_capita_states import _reshape_jad44
+        out = _reshape_jad44(self._make_raw_2025())
+        assert set(out["State"]) == {"Johor", "Pulau Pinang"}
+        assert set(out["Year"]) == {2023, 2024, 2025}
+        pg25 = out[(out.State == "Pulau Pinang") & (out.Year == 2025)].iloc[0]
+        assert pg25["GDP per capita (RM)"] == 80584.086
+        assert pg25["Data status"] == "preliminary"
+        assert set(out[out.Year == 2023]["Data status"]) == {""}   # revised → blank
+
     def test_percapita_title_fallback(self):
         # No JADUAL/TABLE marker at all — anchor on the per-capita title text.
         from pipeline.transforms.gdp_capita_states import _reshape_jad44
@@ -1999,20 +2025,84 @@ class TestGDPCapitaStatesJad44:
         assert _find_jad4344_sheet(["Contents", "A23"]) == "A23"
         assert _find_jad4344_sheet(["Contents"]) is None
 
+    def test_newest_publication_wins_overlap(self, monkeypatch):
+        # Two editions overlap on 2023: the one covering 2025 must win
+        # regardless of Drive listing order (which is arbitrary).
+        import pipeline.transforms.gdp_capita_states as mod
+        old = pd.DataFrame({"State": ["Johor"], "Year": [2023],
+                            "GDP per capita (RM)": [100.0],
+                            "GDP per capita (Malaysia)": [90.0],
+                            "Data status": ["preliminary"], "Updated as of": [2025]})
+        new = pd.DataFrame({"State": ["Johor", "Johor"], "Year": [2023, 2025],
+                            "GDP per capita (RM)": [105.0, 120.0],
+                            "GDP per capita (Malaysia)": [95.0, 99.0],
+                            "Data status": ["", "preliminary"], "Updated as of": [2026, 2026]})
+        class FakeXls:
+            sheet_names = ["A22-A23"]
+            def __init__(self, tag): self.tag = tag
+
+        monkeypatch.setattr(mod, "get_drive_id", lambda *a: "folder123")
+        # newest edition listed FIRST — the buggy order
+        monkeypatch.setattr(mod, "list_drive_folder",
+                            lambda _fid: [{"id": "n", "name": "new.xlsx"},
+                                          {"id": "o", "name": "old.xlsx"}])
+        monkeypatch.setattr(mod, "download_excel_from_drive", FakeXls)
+        monkeypatch.setattr(mod.pd, "read_excel", lambda xls, **k: xls)
+        monkeypatch.setattr(mod, "_reshape_jad44",
+                            lambda raw: new.copy() if raw.tag == "n" else old.copy())
+        out = mod.transform()
+        r2023 = out[(out.State == "Johor") & (out.Year == 2023)].iloc[0]
+        assert r2023["GDP per capita (RM)"] == 105.0    # new edition's revision
+        assert r2023["Data status"] == ""
+
 
 class TestTradeHsLiveFormat:
-    """The live Online Stats CSV stores HS unpadded — appends must match."""
+    """HS chapters stay zero-padded all the way to the live Online Stats CSV.
 
-    def test_hs_unpadded_for_live_file(self):
-        from pipeline.transforms.trade_hs import _to_live_format
-        df = pd.DataFrame({
-            "state": ["PULAU PINANG"] * 3,
-            "type_of_trade": ["exports"] * 3,
-            "hs": ["01", "09", "10"],
-            "country": ["JAPAN"] * 3,
-            "month": pd.to_datetime(["2026-05-01"] * 3),
-            "trade_values": [1, 2, 3],
+    They were briefly unpadded to match that file, but its unpadded state was
+    Excel damage (opening the CSV coerced "01" to the number 1), not a real
+    convention. The repaired master is padded, as the original always was.
+    """
+
+    def test_hs_stays_padded_end_to_end(self):
+        from pipeline.transforms.trade_hs import _reshape_mets
+        mets = pd.DataFrame({
+            "state": ["PULAU PINANG", "PULAU PINANG"],
+            "chapter": ['="01"', '="9"'],
+            "partner_country_name": ["JAPAN", "JAPAN"],
+            "may_2026_exports_value_myr": ["10", "20"],
         })
-        out = _to_live_format(df)
-        assert list(out["hs"]) == ["1", "9", "10"]
-        assert list(df["hs"]) == ["01", "09", "10"]   # source untouched
+        out = _reshape_mets(mets)
+        assert list(out["hs"]) == ["01", "09"]
+        assert out["hs"].str.len().eq(2).all()
+
+
+class TestTradeHsCountryAliases:
+    """METS relabels countries; the workbook's parameter list does not follow."""
+
+    def _mets(self, country):
+        return pd.DataFrame({
+            "state": ["PULAU PINANG"],
+            "chapter": ['="01"'],
+            "partner_country_name": [country],
+            "may_2026_exports_value_myr": ["10"],
+        })
+
+    def test_known_aliases_are_normalised(self):
+        from pipeline.transforms.trade_hs import _reshape_mets
+        for incoming, expected in [
+            ("ANTIGUA & BARBUDA", "ANTIGUA AND BARBUDA"),
+            ("OTHER COUNTRIES,NES", "OTHER COUNTRIES, NES."),
+            ("UNITED STATE MINOR OUTLYING ISLANDS",
+             "UNITED STATES MINOR OUTLYING ISLANDS"),
+        ]:
+            assert _reshape_mets(self._mets(incoming))["country"].iloc[0] == expected
+
+    def test_turkiye_passes_through_unchanged(self):
+        # The parameter was updated to the modern name, so METS matches already.
+        from pipeline.transforms.trade_hs import _reshape_mets
+        assert _reshape_mets(self._mets("TURKIYE"))["country"].iloc[0] == "TURKIYE"
+
+    def test_unmapped_country_is_left_alone(self):
+        from pipeline.transforms.trade_hs import _reshape_mets
+        assert _reshape_mets(self._mets("JAPAN"))["country"].iloc[0] == "JAPAN"
