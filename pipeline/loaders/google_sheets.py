@@ -65,6 +65,22 @@ def dataframe_to_rows(df: pd.DataFrame) -> list[list[str]]:
     return out.where(pd.notna(out), "").astype(str).values.tolist()
 
 
+def _match_sheet_date_style(df: pd.DataFrame) -> pd.DataFrame:
+    """Render datetime columns as plain yyyy-mm-dd before serializing.
+
+    Appended rows have to look like the history they extend. A raw
+    pd.Timestamp is not JSON-serializable at all, and stringifying one yields
+    "2026-06-01 00:00:00", which USER_ENTERED stores as a datetime — unlike the
+    date-only cells already in the sheet. Formatting first keeps the appended
+    cells the same type as the existing ones.
+    """
+    out = df.copy()
+    for col in out.columns:
+        if pd.api.types.is_datetime64_any_dtype(out[col]):
+            out[col] = out[col].dt.strftime("%Y-%m-%d")
+    return out
+
+
 def write_sheet(
     df: pd.DataFrame,
     spreadsheet_id: str,
@@ -144,10 +160,7 @@ def append_new_months_to_sheet(
             if add.empty:
                 logger.info("Sheet '%s' already current (%d rows)", sheet_name, len(cur))
                 return
-            rows = [
-                ["" if pd.isna(v) else v for v in row]
-                for row in add[header].itertuples(index=False, name=None)
-            ]
+            rows = dataframe_to_rows(_match_sheet_date_style(add[header]))
             ws.append_rows(rows, value_input_option="USER_ENTERED")
             logger.info(
                 "Appended %d rows to sheet '%s' in %s (%d -> %d)",
