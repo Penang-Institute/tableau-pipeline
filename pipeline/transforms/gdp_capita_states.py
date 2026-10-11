@@ -157,8 +157,13 @@ def _reshape_jad44(raw: pd.DataFrame) -> pd.DataFrame:
     return df[OUTPUT_COLUMNS]
 
 
-def transform() -> pd.DataFrame:
-    """Read every publication in the GDP inbox and reshape its Jad 44 table."""
+def _read_inbox() -> tuple[pd.DataFrame, list[str]]:
+    """Read every publication in the GDP inbox.
+
+    Returns (rows, unreadable): the merged rows from the files that parsed, and
+    the names of files that yielded nothing (no per-capita sheet, 0 rows, or an
+    error), so the caller can fail the run instead of silently carrying on.
+    """
     folder_id = get_drive_id("gdp_capita_states", "inbox")
     if _is_placeholder(folder_id):
         logger.warning(
@@ -166,9 +171,10 @@ def transform() -> pd.DataFrame:
             "set gdp_capita_states.drive_files.inbox in the registry. Skipping.",
             folder_id,
         )
-        return pd.DataFrame(columns=OUTPUT_COLUMNS)
+        return pd.DataFrame(columns=OUTPUT_COLUMNS), []
 
     frames: list[pd.DataFrame] = []
+    unreadable: list[str] = []
     for entry in list_drive_folder(folder_id):
         name = entry["name"]
         if not name.lower().endswith((".xlsx", ".xls")) or name.startswith("~$"):
@@ -177,18 +183,22 @@ def transform() -> pd.DataFrame:
             xls = download_excel_from_drive(entry["id"])
             sheet = _find_jad4344_sheet(xls.sheet_names)
             if not sheet:
-                logger.warning("No Jad 43-44 sheet in %s — skipping", name)
+                logger.warning("No Jad 43-44 sheet in %s", name)
+                unreadable.append(name)
                 continue
             raw = pd.read_excel(xls, sheet_name=sheet, header=None)
             d = _reshape_jad44(raw)
-            if not d.empty:
+            if d.empty:
+                unreadable.append(name)
+            else:
                 frames.append(d)
             logger.info("Reshaped GDP by-state from %s: %d rows", name, len(d))
         except Exception as e:
             logger.warning("Failed to process GDP file %s: %s", name, e)
+            unreadable.append(name)
 
     if not frames:
-        return pd.DataFrame(columns=OUTPUT_COLUMNS)
+        return pd.DataFrame(columns=OUTPUT_COLUMNS), unreadable
     # Publication recency = the latest year it covers. Sort ascending so the
     # newest edition lands last — Drive listing order is arbitrary, and the
     # newest edition must win the keep="last" dedupe (it carries revisions).
@@ -197,7 +207,12 @@ def transform() -> pd.DataFrame:
     # If multiple publications overlap, keep the newest file's value per State+Year.
     out = out.drop_duplicates(subset=["State", "Year"], keep="last").reset_index(drop=True)
     logger.info("GDP per capita states: %d rows from inbox", len(out))
-    return out
+    return out, unreadable
+
+
+def transform() -> pd.DataFrame:
+    """Read every publication in the GDP inbox and reshape its Jad 44 table."""
+    return _read_inbox()[0]
 
 
 def load(df: pd.DataFrame) -> None:
@@ -207,9 +222,20 @@ def load(df: pd.DataFrame) -> None:
 
 
 def main() -> pd.DataFrame:
-    """Run full GDP per capita pipeline."""
-    df = transform()
+    """Run full GDP per capita pipeline.
+
+    Loads whatever parsed, then fails if any inbox file did not: a new DOSM
+    edition in a layout we cannot read used to log "0 rows" and report success,
+    leaving the Sheet silently stuck at 2024 (Jul-Oct 2026).
+    """
+    df, unreadable = _read_inbox()
     load(df)
+    if unreadable:
+        raise RuntimeError(
+            "GDP inbox file(s) yielded no per-capita rows: "
+            + ", ".join(unreadable)
+            + ". Fix the parser or remove the file from the inbox."
+        )
     return df
 
 
