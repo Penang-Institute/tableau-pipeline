@@ -55,8 +55,13 @@ def _is_placeholder(value: str) -> bool:
 
 
 def _year_cell(v) -> tuple[int, str] | None:
-    """Parse a year header cell → (year, data_status). 'e'=estimate, 'p'=preliminary."""
-    m = re.match(r"^(20\d{2})([ep]?)$", str(v).strip().replace(".0", ""))
+    """Parse a year header cell → (year, data_status). 'e'=estimate, 'p'=preliminary.
+
+    A trailing apostrophe (e.g. "2023'") is DOSM's "revised" marker — strip it so
+    the base year still parses (2025 edition tags its first year this way).
+    """
+    s = str(v).strip().replace(".0", "").rstrip("'’\"")
+    m = re.match(r"^(20\d{2})([ep]?)$", s)
     if not m:
         return None
     return int(m.group(1)), {"e": "estimate", "p": "preliminary"}.get(m.group(2), "")
@@ -112,11 +117,22 @@ def _reshape_jad44(raw: pd.DataFrame) -> pd.DataFrame:
         if (yc := _year_cell(raw.iat[hdr, j])) is not None
     }
 
+    # State names sit in the column just left of the year block, but its index
+    # shifted between editions ("Jad 43-44" used col 2; the 2025 "A22-A23" block
+    # is tighter, col 1). Detect it from the known state names rather than hardcode.
+    first_year_col = min(year_cols)
+    state_col = next(
+        (j for j in range(first_year_col)
+         if any(str(raw.iat[i, j]).strip() in STATES_15
+                for i in range(hdr + 1, min(hdr + 40, len(raw))))),
+        first_year_col - 1,
+    )
+
     rows: list[tuple] = []
     malaysia: dict[int, float] = {}
     seen_state = False
     for i in range(hdr + 1, len(raw)):
-        name = str(raw.iat[i, 2]).strip()
+        name = str(raw.iat[i, state_col]).strip()
         if name in STATES_15:
             seen_state = True
             for j, (yr, status) in year_cols.items():
@@ -173,6 +189,10 @@ def transform() -> pd.DataFrame:
 
     if not frames:
         return pd.DataFrame(columns=OUTPUT_COLUMNS)
+    # Publication recency = the latest year it covers. Sort ascending so the
+    # newest edition lands last — Drive listing order is arbitrary, and the
+    # newest edition must win the keep="last" dedupe (it carries revisions).
+    frames.sort(key=lambda d: int(d["Year"].max()))
     out = pd.concat(frames, ignore_index=True)
     # If multiple publications overlap, keep the newest file's value per State+Year.
     out = out.drop_duplicates(subset=["State", "Year"], keep="last").reset_index(drop=True)
