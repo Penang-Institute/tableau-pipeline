@@ -2106,3 +2106,57 @@ class TestTradeHsCountryAliases:
     def test_unmapped_country_is_left_alone(self):
         from pipeline.transforms.trade_hs import _reshape_mets
         assert _reshape_mets(self._mets("JAPAN"))["country"].iloc[0] == "JAPAN"
+
+
+# ---------------------------------------------------------------------------
+# GDP per capita by state: an unreadable inbox file must fail the run loudly
+# ---------------------------------------------------------------------------
+
+class TestGDPCapitaStatesUnreadableInbox:
+    """A new DOSM edition the parser cannot read used to log 0 rows and report
+    success, so the Sheet silently stopped at 2024 (Jul-Oct 2026)."""
+
+    PATCH = "pipeline.transforms.gdp_capita_states"
+
+    @staticmethod
+    def _xls(sheets: dict[str, pd.DataFrame]) -> pd.ExcelFile:
+        buf = io.BytesIO()
+        with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+            for name, raw in sheets.items():
+                raw.to_excel(writer, sheet_name=name, index=False, header=False)
+        buf.seek(0)
+        return pd.ExcelFile(buf)
+
+    def _run(self, files: dict[str, pd.ExcelFile]):
+        """Run main() against a fake inbox {file name: workbook}; return the upsert mock."""
+        entries = [{"id": n, "name": n} for n in files]
+        with patch(f"{self.PATCH}.get_drive_id", return_value="folder"), \
+             patch(f"{self.PATCH}.list_drive_folder", return_value=entries), \
+             patch(f"{self.PATCH}.download_excel_from_drive", side_effect=lambda i: files[i]), \
+             patch(f"{self.PATCH}.upsert_rows_to_sheet") as upsert:
+            from pipeline.transforms.gdp_capita_states import main
+            try:
+                main()
+            finally:
+                self.upsert = upsert
+        return upsert
+
+    def _good(self):
+        raw = TestGDPCapitaStatesJad44()._make_raw_2025()
+        return self._xls({"A22-A23": raw})
+
+    def test_all_readable_does_not_raise(self):
+        upsert = self._run({"good.xlsx": self._good()})
+        assert upsert.call_count == 1
+
+    def test_zero_row_file_raises_naming_the_file_but_still_loads_good_data(self):
+        empty = self._xls({"A22-A23": pd.DataFrame([["nothing", None], [None, None]])})
+        with pytest.raises(RuntimeError, match="bad.xlsx"):
+            self._run({"good.xlsx": self._good(), "bad.xlsx": empty})
+        # the readable edition was still upserted before the run failed
+        assert self.upsert.call_count == 1
+
+    def test_file_without_per_capita_sheet_raises(self):
+        wrong = self._xls({"A1": pd.DataFrame([["x"]])})
+        with pytest.raises(RuntimeError, match="nosheet.xlsx"):
+            self._run({"nosheet.xlsx": wrong})
