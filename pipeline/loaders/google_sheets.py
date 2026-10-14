@@ -144,10 +144,17 @@ def append_new_months_to_sheet(
             if add.empty:
                 logger.info("Sheet '%s' already current (%d rows)", sheet_name, len(cur))
                 return
-            rows = [
-                ["" if pd.isna(v) else v for v in row]
-                for row in add[header].itertuples(index=False, name=None)
-            ]
+            # Normalise EVERY datetime column, not just date_col.
+            # select_new_period_rows formats date_col to the sheet's style, but
+            # any other datetime column stayed a raw Timestamp — not
+            # JSON-serialisable, so the append died with "Object of type
+            # Timestamp is not JSON serializable" (trade's "Updated as of").
+            # Date-only matches how these sheets already store such columns.
+            out = add[header].copy()
+            for col in out.columns:
+                if pd.api.types.is_datetime64_any_dtype(out[col]):
+                    out[col] = out[col].dt.strftime("%Y-%m-%d")
+            rows = dataframe_to_rows(out)
             ws.append_rows(rows, value_input_option="USER_ENTERED")
             logger.info(
                 "Appended %d rows to sheet '%s' in %s (%d -> %d)",
