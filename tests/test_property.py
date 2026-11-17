@@ -48,6 +48,9 @@ def test_normalise_type_never_produces_detacheded_or_terraced():
     assert [pn.normalise_type(t) for t in old] == [pn.normalise_type(t) for t in new] == [
         "Single storey terrace", "2-3 storey terrace", "2-3 storey semi-detached", "Detached", "Low-cost flat",
     ]
+    # R's broken labels in the live tab map onto the same fixed labels
+    assert pn.normalise_type("2-3 storey semi-detacheded") == "2-3 storey semi-detached"
+    assert pn.normalise_type("Detacheded") == "Detached"
 
 
 # --- sales tables 6.1 / 6.3 ---------------------------------------------------
@@ -158,17 +161,85 @@ def test_sheet_dates_reads_serials_display_text_and_iso_but_rejects_junk():
         prop.sheet_dates(pd.Series(["someday"], name="Date"))
 
 
+def test_sheet_dates_rejects_numbers_that_are_not_date_serials():
+    with pytest.raises(ValueError, match="not date serials"):
+        prop.sheet_dates(pd.Series([2020], name="Date"))
+
+
+def _folder(monkeypatch, names):
+    monkeypatch.setattr(prop, "get_drive_id", lambda t, k: "folder")
+    monkeypatch.setattr(prop, "list_drive_folder", lambda folder: [{"name": n, "id": n} for n in names])
+
+
+def test_napic_files_refuses_two_files_for_one_quarter(monkeypatch):
+    _folder(monkeypatch, ["Table 1.1 New Launches Q3 2024.xls", "Table 1.1 New Launches Q3 2024 (1).xls"])
+    with pytest.raises(RuntimeError, match="same period"):
+        prop.napic_files("launched", pn.file_quarter)
+    assert len(prop.napic_files("launched", pn.file_quarter, allow_same_period=True)) == 2
+
+
+def test_napic_files_fails_on_unknown_undated_names_but_skips_known_ones(monkeypatch):
+    _folder(monkeypatch, ["2020 H1.xls", "2021 Q3.xlsx", "notes.pdf"])
+    assert [n for n, _, _ in prop.napic_files("sales", pn.file_quarter)] == ["2021 Q3.xlsx"]
+    _folder(monkeypatch, ["Penang Third Quarter 2024.xlsx"])
+    with pytest.raises(pn.LayoutError):
+        prop.napic_files("sales", pn.file_quarter)
+
+
+def test_require_every_quarter_spots_a_gap():
+    prop.require_every_quarter(pd.Series(pd.to_datetime(["2021-04-01", "2021-07-01"])), pd.Timestamp("2021-04-01"), "x")
+    with pytest.raises(RuntimeError, match="2021-07"):
+        prop.require_every_quarter(pd.Series(pd.to_datetime(["2021-04-01", "2021-10-01"])),
+                                   pd.Timestamp("2021-04-01"), "x")
+
+
+def test_renamed_legacy_column_fails_instead_of_writing_blanks():
+    legacy = pd.DataFrame({"Updated as of": [2019], "Year": [2019], "State": ["Penang"], "Measure": ["Mean"],
+                           "House price (RM per unit)": [1.0]})  # header renamed upstream
+    with pytest.raises(KeyError, match="House price"):
+        prop.check_legacy_columns(legacy, "house_prices")
+
+
+def test_for_sheet_refuses_duplicate_rows_and_missing_columns():
+    row = {"Date": pd.Timestamp("2024-07-01"), "Sub-sector": "Total", "Updated as of": "",
+           "Price range": "a", "Number": 1, "Value (RM)": 1}
+    with pytest.raises(ValueError, match="share a key"):
+        prop.for_sheet(pd.DataFrame([row, row]), "transactions")
+    with pytest.raises(KeyError, match="Value"):
+        prop.for_sheet(pd.DataFrame([row]).drop(columns="Value (RM)"), "transactions")
+
+
+def test_same_rows_ignores_order_but_not_values():
+    a = pd.DataFrame({"k": [1, 2], "v": [0.5, None]})
+    assert prop._same_rows(a, a.iloc[::-1])
+    assert not prop._same_rows(a, a.assign(v=[0.6, None]))
+
+
 def test_latest_keeps_newest_release_and_groups_without_one():
     df = pd.DataFrame({"Date": ["q3", "q3", "q4"], "rel": [1, 2, None], "v": ["old", "new", "only"]})
     assert prop.latest(df, ["Date"], "rel")["v"].tolist() == ["new", "only"]
 
 
+def transactions(**cols):
+    """Full transactions frame; override any column."""
+    n = len(next(iter(cols.values()))) if cols else 1
+    base = {"Date": pd.to_datetime(["2024-07-01"] * n), "Sub-sector": ["Total"] * n, "Updated as of": [""] * n,
+            "Price range": [f"r{i}" for i in range(n)], "Number": [1.0] * n, "Value (RM)": [1.0] * n}
+    return pd.DataFrame({**base, **cols})
+
+
 def test_for_sheet_formats_dates_and_refuses_blank_dates():
-    df = pd.DataFrame({"Date": pd.to_datetime(["2024-07-01"]), "Number": [3.0]})
-    out = prop.for_sheet(df, "transactions")
+    out = prop.for_sheet(transactions(Number=[3.0]), "transactions")
     assert list(out.columns) == prop.OUTPUT_COLUMNS["transactions"] and out["Date"].tolist() == ["2024-07-01"]
     with pytest.raises(ValueError):
-        prop.for_sheet(pd.DataFrame({"Date": [pd.NaT]}), "transactions")
+        prop.for_sheet(transactions(Date=[pd.NaT]), "transactions")
+
+
+def test_for_sheet_keeps_formula_like_text_literal():
+    df = transactions(**{"Price range": ["=HYPERLINK(1)", "0 - 100,000", ""], "Number": [1.0, -2.0, 3.0]})
+    out = prop.for_sheet(df, "transactions")
+    assert out["Price range"].tolist() == ["'=HYPERLINK(1)", "0 - 100,000", ""]
+    assert out["Number"].tolist() == [1.0, -2.0, 3.0]  # numbers untouched
 
 
 def test_transform_fails_loudly_when_a_legacy_tab_cannot_be_read(monkeypatch):
@@ -201,7 +272,11 @@ def test_write_sheet_refuses_to_shrink_a_tab(monkeypatch):
     calls = []
 
     class FakeWS:
+        def __init__(self, fail_updates=0):
+            self.fail_updates = fail_updates
+
         def get_all_values(self):
+            calls.append("read")
             return [["h"]] + [["r"]] * 100
 
         def clear(self):
@@ -209,15 +284,32 @@ def test_write_sheet_refuses_to_shrink_a_tab(monkeypatch):
 
         def update(self, *a, **k):
             calls.append("update")
+            if self.fail_updates:
+                self.fail_updates -= 1
+                raise ConnectionError("503")
 
-    sheet = type("S", (), {"worksheet": lambda _s, _n: FakeWS()})()
+        def batch_clear(self, ranges):
+            calls.append(("batch_clear", ranges))
+
+    ws = FakeWS()
+    sheet = type("S", (), {"worksheet": lambda _s, _n: ws})()
     monkeypatch.setattr(gs, "_get_gspread_client", lambda: type("C", (), {"open_by_key": lambda _s, _k: sheet})())
+    monkeypatch.setattr(gs.time, "sleep", lambda s: None)
     with pytest.raises(gs.WriteRefused):
         gs.write_sheet(pd.DataFrame({"h": range(50)}), "id", "data", max_shrink=0.1)
-    assert calls == []  # nothing cleared, nothing written
+    assert calls == ["read"]  # nothing cleared, nothing written
 
+    # Safe mode never clears first: overwrite, then blank only the old leftover rows.
+    calls.clear()
     gs.write_sheet(pd.DataFrame({"h": range(95)}), "id", "data", max_shrink=0.1)
-    assert calls == ["clear", "update"]
+    assert calls == ["read", "update", ("batch_clear", ["A97:A101"])]
+
+    # A failed update leaves the old rows in place; retries reuse the first row count.
+    calls.clear()
+    ws.fail_updates = 1
+    gs.write_sheet(pd.DataFrame({"h": range(95)}), "id", "data", max_shrink=0.1)
+    assert calls == ["read", "update", "update", ("batch_clear", ["A97:A101"])]
+    assert "clear" not in calls
 
 
 def release_grid(quarters, base):
@@ -241,6 +333,7 @@ def test_transactions_keep_one_copy_of_a_quarter_in_two_releases(monkeypatch):
     monkeypatch.setattr(prop, "read_legacy", lambda key: legacy.copy())
     monkeypatch.setattr(prop, "list_drive_folder", lambda folder: [{"name": n, "id": n} for n in releases])
     monkeypatch.setattr(prop, "get_drive_id", lambda t, k: "folder")
+    monkeypatch.setattr(prop, "require_every_quarter", lambda *a: None)  # sparse fixture; tested separately
     monkeypatch.setattr(prop, "read_sheets", lambda fid, pattern: {
         "6.1&6.2": release_grid(*releases[fid]), "6.3&6.4": release_grid(*releases[fid])})
 
@@ -261,6 +354,34 @@ def test_preview_reports_removed_duplicates_additions_and_value_changes():
                         "Number": [1.0, 4.0, 5.0], "Value (RM)": [10.000001, 30.0, 50.0]})
     summary = pv.compare("transactions", live, new)
     assert summary == {"live": 3, "new": 3, "removed": 0, "added": 1, "dupes_removed": 1, "values_changed": 1}
+
+
+def test_preview_explains_relabelled_rows(caplog):
+    from pipeline.transforms import property_preview as pv
+
+    cols = {"Date": [45200], "Status of property": ["Overhang"], "Price range": ["0-100,000"],
+            "Number of units launched": [4], "Number of unsold units": [1], "Unsold value (RM mil)": [0.5]}
+    live = pd.DataFrame({**cols, "Type": ["2-3 storey semi-detacheded"]})
+    new = pd.DataFrame({**cols, "Date": ["2023-10-01"], "Type": ["2-3 storey semi-detached"]})
+    with caplog.at_level("INFO"):
+        pv.compare("unsold", live, new)
+    assert "1 rows are only relabelled (1 with identical values)" in caplog.text
+    assert "'2-3 storey semi-detacheded' -> '2-3 storey semi-detached'" in caplog.text
+
+
+def test_preview_flags_text_in_number_columns_and_small_value_changes(caplog):
+    from pipeline.transforms import property_preview as pv
+
+    base = {"Date": ["2023-10-01"], "Status of property": ["Overhang"], "Price range": ["0-100,000"],
+            "Type": ["Flat"], "Number of units launched": [4], "Number of unsold units": [1]}
+    live = pd.DataFrame({**base, "Unsold value (RM mil)": ["N/A"]})
+    new = pd.DataFrame({**base, "Unsold value (RM mil)": [0.205]})
+    with caplog.at_level("INFO"):
+        pv.compare("unsold", live, new)
+    assert "live has text in number columns: {'Unsold value (RM mil)': ['N/A']}" in caplog.text
+
+    live = pd.DataFrame({**base, "Unsold value (RM mil)": [0.2]})
+    assert pv.compare("unsold", live, new)["values_changed"] == 1  # 0.2 vs 0.205 is a real change
 
 
 # --- optional: real NAPIC files -------------------------------------------------

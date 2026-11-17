@@ -69,6 +69,19 @@ class WriteRefused(RuntimeError):
     """write_sheet declined to replace a tab because the new data looks wrong."""
 
 
+def _leftover_ranges(old: tuple[int, int], new: tuple[int, int]) -> list[str]:
+    """A1 ranges holding old cells outside the newly written block."""
+    from gspread.utils import rowcol_to_a1
+
+    (old_rows, old_cols), (new_rows, new_cols) = old, new
+    ranges = []
+    if old_rows > new_rows and old_cols:
+        ranges.append(f"{rowcol_to_a1(new_rows + 1, 1)}:{rowcol_to_a1(old_rows, old_cols)}")
+    if old_cols > new_cols and old_rows:
+        ranges.append(f"{rowcol_to_a1(1, new_cols + 1)}:{rowcol_to_a1(min(old_rows, new_rows), old_cols)}")
+    return ranges
+
+
 def write_sheet(
     df: pd.DataFrame,
     spreadsheet_id: str,
@@ -84,10 +97,17 @@ def write_sheet(
 
     value_input_option: "RAW" stores every cell as text (the default);
         "USER_ENTERED" lets Sheets type numbers and ISO dates like R did.
-    max_shrink: if set, refuse (WriteRefused) to replace a tab when the new
-        data has more than this fraction fewer rows than the tab holds now,
-        e.g. 0.1 blocks a write that would drop over 10% of the rows.
+    max_shrink: if set, write in safe mode. Refuse (WriteRefused) when the new
+        data has more than this fraction fewer rows than the tab holds now
+        (0.1 blocks dropping over 10% of rows), and never clear the tab
+        first: overwrite in place, then blank only the leftover old cells,
+        so a failed write leaves the old data rather than an empty tab.
     """
+    # Convert all values AND headers to strings to avoid JSON errors
+    # (a NaN column name from a read sheet is a non-JSON-compliant float).
+    grid = [[str(c) for c in df.columns]] + dataframe_to_rows(df)
+    old_shape = None  # (rows, cols) of the tab before any write; safe mode only
+
     for attempt in range(retries):
         try:
             gc = _get_gspread_client()
@@ -99,21 +119,23 @@ def write_sheet(
                 logger.info("Worksheet '%s' not found, creating new: %s", sheet_name, e)
                 worksheet = spreadsheet.add_worksheet(title=sheet_name, rows=1, cols=1)
 
-            if max_shrink is not None:
-                existing = max(len(worksheet.get_all_values()) - 1, 0)
-                if len(df) < existing * (1 - max_shrink):
-                    raise WriteRefused(
-                        f"Refusing to replace '{sheet_name}' in {spreadsheet_id}: "
-                        f"{existing} rows now, only {len(df)} new rows"
-                    )
-
-            worksheet.clear()
-
-            # Convert all values AND headers to strings to avoid JSON errors
-            # (a NaN column name from a read sheet is a non-JSON-compliant float).
-            header = [str(c) for c in df.columns]
-            values = dataframe_to_rows(df)
-            worksheet.update([header] + values, value_input_option=value_input_option)
+            if max_shrink is None:
+                worksheet.clear()
+                worksheet.update(grid, value_input_option=value_input_option)
+            else:
+                if old_shape is None:  # measured once: a retry must not see a half-written tab
+                    old = worksheet.get_all_values()
+                    old_shape = (len(old), max((len(r) for r in old), default=0))
+                    existing = max(old_shape[0] - 1, 0)
+                    if len(df) < existing * (1 - max_shrink):
+                        raise WriteRefused(
+                            f"Refusing to replace '{sheet_name}' in {spreadsheet_id}: "
+                            f"{existing} rows now, only {len(df)} new rows"
+                        )
+                worksheet.update(grid, value_input_option=value_input_option)
+                leftover = _leftover_ranges(old_shape, (len(grid), len(grid[0])))
+                if leftover:
+                    worksheet.batch_clear(leftover)
 
             logger.info(
                 "Wrote %d rows to sheet '%s' in %s", len(df), sheet_name, spreadsheet_id

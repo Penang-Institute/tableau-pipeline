@@ -108,7 +108,7 @@ def _table_quarter(label: str) -> pd.Timestamp:
 def normalise_type(raw: str) -> str:
     """Property type label as R wrote it, minus R's Detacheded/terraced drift."""
     label = _tight(_sentence(_text(raw)))
-    label = re.sub(r"\b([dD])etach(?:ed)?\b", r"\1etached", label)
+    label = re.sub(r"\b([dD])etach(?:ed)*\b", r"\1etached", label)  # also repairs "Detacheded"
     label = re.sub(r"\bterraced\b", "terrace", label)
     return label.replace("Low cost", "Low-cost")
 

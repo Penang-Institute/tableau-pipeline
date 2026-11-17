@@ -76,7 +76,19 @@ UNSOLD_FROM = pd.Timestamp("2021-04-01")   # Date >= 2021 Q2
 # Expected changes vs the live tabs are a few percent (duplicate quarters
 # removed); refuse any write that would drop more than this share of rows.
 MAX_SHRINK = 0.10
+# Each output row is unique on these columns (checked before every write).
+UNIQUE_KEYS = {
+    "transactions": ["Date", "Sub-sector", "Price range", "Updated as of"],
+    "house_prices": ["Year", "State", "Measure", "Updated as of"],
+    "unsold": ["Date", "Status of property", "Price range", "Type"],
+    "newly_launched": ["Date", "District", "Property type", "Price range"],
+}
+# Output columns that neither source fills (kept blank to match the live tab).
+OPTIONAL_COLUMNS = {"newly_launched": {"Sold units (W12)"}}
+# NAPIC files known to carry no quarter in their name; any other such file fails the run.
+UNDATED_FILES = {"2020 H1.xls"}
 _SHEETS_EPOCH = pd.Timestamp("1899-12-30")
+_SERIAL_RANGE = (32874, 73051)  # Sheets day numbers for 1990-01-01 .. 2100-01-01
 
 
 # --- reading -----------------------------------------------------------------
@@ -95,6 +107,9 @@ def sheet_dates(values: pd.Series) -> pd.Series:
     change cannot silently blank a column again.
     """
     serial = pd.to_numeric(values, errors="coerce")
+    odd = serial.notna() & ~serial.between(*_SERIAL_RANGE)
+    if odd.any():  # e.g. a bare year 2020 would otherwise become a 1905 date
+        raise ValueError(f"Numbers that are not date serials in {values.name!r}: {sorted(set(serial[odd]))[:5]}")
     from_serial = _SHEETS_EPOCH + pd.to_timedelta(serial // 1, unit="D")
     text = values.where(serial.isna()).map(lambda v: "" if pd.isna(v) else str(v).strip())
     from_text = pd.to_datetime(text, format="%b-%y", errors="coerce").fillna(
@@ -113,11 +128,15 @@ def _quarter_text(value) -> pd.Timestamp:
     return napic.file_quarter(text) if text else pd.NaT
 
 
-def napic_files(folder_key: str, period: Callable[[str], object]) -> list[tuple[str, object, str]]:
+def napic_files(
+    folder_key: str, period: Callable[[str], object], allow_same_period: bool = False,
+) -> list[tuple[str, object, str]]:
     """(name, period, file id) for each Excel file in a NAPIC folder.
 
-    Files whose name carries no release period (e.g. "2020 H1.xls") are
-    skipped with a warning; R skipped them too.
+    A name with no release period fails the run unless it is a known old file
+    (UNDATED_FILES), so a newly added, oddly named release cannot be skipped
+    silently. Two files for the same period also fail (a re-download such as
+    "... (1).xls" would otherwise duplicate rows) unless the caller handles it.
     """
     out = []
     for f in list_drive_folder(get_drive_id("property", f"napic_{folder_key}")):
@@ -127,8 +146,28 @@ def napic_files(folder_key: str, period: Callable[[str], object]) -> list[tuple[
         try:
             out.append((name, period(name), f["id"]))
         except napic.LayoutError:
-            logger.warning("Skipping NAPIC file with no release period in its name: %s", name)
-    return sorted(out, key=lambda t: (t[1], t[0]))
+            if name not in UNDATED_FILES:
+                raise
+            logger.info("Skipping known undated NAPIC file: %s", name)
+    out.sort(key=lambda t: (t[1], t[0]))
+    if not allow_same_period:
+        seen = {}
+        for name, p, _ in out:
+            if p in seen:
+                raise RuntimeError(f"Two NAPIC {folder_key} files for the same period: {seen[p]!r}, {name!r}")
+            seen[p] = name
+    return out
+
+
+def require_every_quarter(dates: pd.Series, start: pd.Timestamp, what: str) -> None:
+    """Fail if any quarter from `start` to the newest one is missing."""
+    have = set(pd.to_datetime(dates.dropna()).unique())
+    if not have:
+        raise RuntimeError(f"{what}: no quarters at all")
+    expected = pd.date_range(start, max(have), freq="QS")
+    missing = [d.strftime("%Y-%m") for d in expected if d not in have]
+    if missing:
+        raise RuntimeError(f"{what}: missing quarters {missing}")
 
 
 def read_sheets(file_id: str, pattern: str) -> dict[str, pd.DataFrame]:
@@ -156,11 +195,35 @@ def _need(frames: list[pd.DataFrame], what: str) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
+def _same_rows(a: pd.DataFrame, b: pd.DataFrame) -> bool:
+    """Same rows regardless of order (NaN equals NaN)."""
+    if list(a.columns) != list(b.columns) or len(a) != len(b):
+        return False
+    cols = list(a.columns)
+    a, b = (x.sort_values(cols, ignore_index=True) for x in (a, b))
+    return a.equals(b)
+
+
+def check_legacy_columns(legacy: pd.DataFrame, key: str) -> pd.DataFrame:
+    """Fail if a legacy tab lost or renamed a column we write.
+
+    Without this, a renamed header becomes an all-blank column on write while
+    the row count (and so the shrink guard) looks fine.
+    """
+    missing = [
+        c for c in OUTPUT_COLUMNS[key]
+        if c not in legacy.columns and c not in OPTIONAL_COLUMNS.get(key, set())
+    ]
+    if missing:
+        raise KeyError(f"Legacy {LEGACY_TABS[key]!r} tab has no column(s) {missing}; found {list(legacy.columns)}")
+    return legacy
+
+
 # --- transforms --------------------------------------------------------------
 
 def transform_transactions() -> pd.DataFrame:
     """Legacy byPrice&Sector + NAPIC tables 6.1/6.3 after 2021 Q1 (R lines 17-133)."""
-    legacy = read_legacy("transactions")
+    legacy = check_legacy_columns(read_legacy("transactions"), "transactions")
     legacy["Sub-sector"] = legacy["Sub-sector"].replace("Development land", "Development")
     legacy["Date"] = sheet_dates(legacy["Date"]).dt.to_period("Q").dt.to_timestamp()
 
@@ -171,6 +234,7 @@ def transform_transactions() -> pd.DataFrame:
     ]
     sales = _need(frames, "transactions")
     sales = latest(sales[sales["Date"] > SALES_AFTER], ["Date"], "_release")
+    require_every_quarter(sales["Date"], SALES_AFTER + pd.offsets.QuarterBegin(startingMonth=1), "transactions")
 
     result = pd.concat([legacy, sales.assign(**{"Updated as of": ""})], ignore_index=True)
     logger.info("Property transactions: %d legacy + %d NAPIC rows", len(legacy), len(sales))
@@ -180,16 +244,17 @@ def transform_transactions() -> pd.DataFrame:
 def transform_house_prices() -> pd.DataFrame:
     """Legacy 2015-2019 + NAPIC annual price tables after 2019 (R lines 136-186)."""
     legacy = read_legacy("house_prices").rename(columns={"House price (RM/unit)": "House price"})
+    check_legacy_columns(legacy, "house_prices")
 
     files = [f for f in napic_files("prices", napic.file_year) if f[1] > PRICES_AFTER_YEAR]
-    years = [year for _, year, _ in files]
-    if len(years) != len(set(years)):
-        raise RuntimeError(f"More than one NAPIC price file for a year: {sorted(years)}")
     frames = [
         napic.house_price_table(next(iter(read_sheets(fid, r"Keseluruhan.*").values())), year)
         for _, year, fid in files
     ]
     prices = _need(frames, "house prices")
+    missing = sorted(set(range(PRICES_AFTER_YEAR + 1, prices["Year"].max() + 1)) - set(prices["Year"]))
+    if missing:
+        raise RuntimeError(f"house prices: missing years {missing}")
 
     result = pd.concat([legacy, prices.assign(**{"Updated as of": ""})], ignore_index=True)
     logger.info("House prices: %d legacy + %d NAPIC rows", len(legacy), len(prices))
@@ -198,20 +263,26 @@ def transform_house_prices() -> pd.DataFrame:
 
 def transform_unsold() -> pd.DataFrame:
     """NAPIC status tables from 2021 Q2 + legacy Unsold tab (R lines 188-306)."""
-    legacy = read_legacy("unsold")[OUTPUT_COLUMNS["unsold"]].copy()
+    legacy = check_legacy_columns(read_legacy("unsold"), "unsold")[OUTPUT_COLUMNS["unsold"]].copy()
     legacy["Date"] = sheet_dates(legacy["Date"]).dt.to_period("Q").dt.to_timestamp()
+    numbers = OUTPUT_COLUMNS["unsold"][4:]
+    legacy[numbers] = legacy[numbers].replace("N/A", pd.NA)  # R read this tab with na = "N/A"
 
-    frames, seen = [], {}
-    for name, quarter, fid in napic_files("status", napic.file_quarter):
+    tables = "|".join(re.escape(t) for t in napic.UNSOLD_TABLES)
+    by_quarter: dict[pd.Timestamp, tuple[str, pd.DataFrame]] = {}
+    for name, quarter, fid in napic_files("status", napic.file_quarter, allow_same_period=True):
         if quarter < UNSOLD_FROM:
             continue
-        if quarter in seen:  # e.g. Q1 2023 exists as both .xls and .xlsx
-            logger.info("Skipping %s: same quarter as %s", name, seen[quarter])
+        parsed = napic.parse_unsold(read_sheets(fid, tables)).assign(Date=quarter)
+        if quarter in by_quarter:  # e.g. Q1 2023 exists as both .xls and .xlsx
+            first_name, first = by_quarter[quarter]
+            if not _same_rows(first, parsed):
+                raise RuntimeError(f"Two different NAPIC status files for one quarter: {first_name!r}, {name!r}")
+            logger.info("Skipping %s: identical to %s", name, first_name)
             continue
-        seen[quarter] = name
-        sheets = read_sheets(fid, "|".join(re.escape(t) for t in napic.UNSOLD_TABLES))
-        frames.append(napic.parse_unsold(sheets).assign(Date=quarter))
-    unsold = _need(frames, "unsold")
+        by_quarter[quarter] = (name, parsed)
+    unsold = _need([frame for _, frame in by_quarter.values()], "unsold")
+    require_every_quarter(unsold["Date"], UNSOLD_FROM, "unsold")
 
     result = pd.concat([unsold, legacy], ignore_index=True)
     logger.info("Unsold property: %d NAPIC + %d legacy rows", len(unsold), len(legacy))
@@ -220,7 +291,7 @@ def transform_unsold() -> pd.DataFrame:
 
 def transform_newly_launched() -> pd.DataFrame:
     """NAPIC new-launch tables + legacy tab, newest release per cell (R lines 308-440)."""
-    legacy = read_legacy("newly_launched")
+    legacy = check_legacy_columns(read_legacy("newly_launched"), "newly_launched")
     legacy = legacy.drop(columns=[c for c in legacy.columns if str(c).endswith("bound")])
     legacy["Updated as of"] = legacy["Updated as of"].map(_quarter_text)
     legacy["Date"] = sheet_dates(legacy["Date"])
@@ -231,6 +302,7 @@ def transform_newly_launched() -> pd.DataFrame:
         for _, quarter, fid in napic_files("launched", napic.file_quarter)
     ]
     launched = _need(frames, "newly launched")
+    require_every_quarter(launched["Date"], launched["Date"].min(), "newly launched")
 
     keys = ["Date", "District", "Property type", "Price range"]
     result = latest(pd.concat([launched, legacy], ignore_index=True), keys, "Updated as of")
@@ -250,14 +322,26 @@ def for_sheet(df: pd.DataFrame, key: str) -> pd.DataFrame:
     """Output columns in the live tab's order; dates as YYYY-MM-DD text.
 
     Written with USER_ENTERED, so Sheets stores dates and numbers typed, as R's
-    sheet_write did. Refuses blank Date cells (the earlier port blanked them all).
+    sheet_write did. Refuses blank Date cells (the earlier port blanked them
+    all), duplicate rows, and missing columns.
     """
+    missing = [c for c in OUTPUT_COLUMNS[key] if c not in df.columns and c not in OPTIONAL_COLUMNS.get(key, set())]
+    if missing:
+        raise KeyError(f"property {key}: no column(s) {missing}")
     out = df.reindex(columns=OUTPUT_COLUMNS[key]).copy()
+    dupes = out.duplicated(subset=UNIQUE_KEYS[key], keep=False)
+    if dupes.any():
+        sample = out.loc[dupes, UNIQUE_KEYS[key]].head(3).astype(str).agg(" | ".join, axis=1).tolist()
+        raise ValueError(f"property {key}: {int(dupes.sum())} rows share a key, e.g. {sample}")
     for col in DATE_COLUMNS[key]:
         dates = pd.to_datetime(out[col])
         if col == "Date" and dates.isna().any():
             raise ValueError(f"property {key}: {int(dates.isna().sum())} rows have no Date")
         out[col] = dates.dt.strftime("%Y-%m-%d")
+    for col in out.columns.difference(DATE_COLUMNS[key]):
+        # USER_ENTERED would run text like "=HYPERLINK(...)" as a formula;
+        # a leading apostrophe keeps it literal text (Sheets does not show it).
+        out[col] = out[col].map(lambda v: f"'{v}" if isinstance(v, str) and v[:1] in "=+-@" and v else v)
     return out
 
 

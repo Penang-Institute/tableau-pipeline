@@ -16,16 +16,28 @@ import pandas as pd
 
 from pipeline.fetchers.gdrive import read_google_sheet
 from pipeline.transforms import property as prop
+from pipeline.transforms.property_napic import normalise_type
 
 logger = logging.getLogger(__name__)
 
-KEYS = {
-    "transactions": ["Date", "Sub-sector", "Price range", "Updated as of"],
-    "house_prices": ["Year", "State", "Measure", "Updated as of"],
-    "unsold": ["Date", "Status of property", "Price range", "Type"],
-    "newly_launched": ["Date", "District", "Property type", "Price range"],
-}
+KEYS = prop.UNIQUE_KEYS
 SAMPLES = 8
+# Tight enough to catch 0.2 vs 0.205 in "Unsold value (RM mil)"; rtol absorbs
+# float noise in large values such as R's RM-million x 1e6 products.
+TOLERANCE = {"rtol": 1e-9, "atol": 1e-6}
+
+
+def _text_in_numbers(df: pd.DataFrame, key: str) -> dict[str, list]:
+    """Non-blank values in number columns that are not numbers (e.g. "N/A")."""
+    found = {}
+    for col in prop.OUTPUT_COLUMNS[key]:
+        if col in KEYS[key] or col in prop.DATE_COLUMNS[key] or col not in df.columns:
+            continue
+        raw = df[col].map(lambda v: "" if pd.isna(v) else str(v).strip())
+        bad = raw.ne("") & pd.to_numeric(raw.str.lstrip("'"), errors="coerce").isna()
+        if bad.any():
+            found[col] = sorted(set(raw[bad]))[:5]
+    return found
 
 
 def _normalise(df: pd.DataFrame, key: str) -> pd.DataFrame:
@@ -48,6 +60,32 @@ def _period_counts(df: pd.DataFrame) -> str:
     return ", ".join(f"{p or '(blank)'}: {n}" for p, n in counts.items()) or "none"
 
 
+def _report_relabels(log, keys, values, removed, added) -> None:
+    """Explain removed/added pairs that are the same row under a fixed type label.
+
+    R wrote labels like "Detacheded" and "terraced"; the port writes "Detached"
+    and "terrace". Map the live labels the same way and check the values match.
+    """
+    label_col = next((c for c in ("Type", "Property type") if c in keys), None)
+    if label_col is None or removed.empty or added.empty:
+        return
+    mapped = removed.assign(**{label_col: removed[label_col].map(normalise_type)})
+    pairs = mapped.merge(added, on=keys, suffixes=("_live", "_new"))
+    if pairs.empty:
+        return
+    same = pd.concat(
+        [
+            pd.Series(np.isclose(pairs[f"{c}_live"], pairs[f"{c}_new"], **TOLERANCE)
+                      | (pairs[f"{c}_live"].isna() & pairs[f"{c}_new"].isna()))
+            for c in values
+        ],
+        axis=1,
+    ).all(axis=1)
+    renames = sorted(set(zip(removed[label_col], mapped[label_col])) - {(x, x) for x in mapped[label_col]})
+    log("of these, %d rows are only relabelled (%d with identical values): %s", len(pairs), int(same.sum()),
+        "; ".join(f"{old!r} -> {new!r}" for old, new in renames))
+
+
 def compare(key: str, before: pd.DataFrame, after: pd.DataFrame) -> dict:
     """Log and return a summary of how `after` differs from `before`."""
     keys = KEYS[key]
@@ -60,6 +98,12 @@ def compare(key: str, before: pd.DataFrame, after: pd.DataFrame) -> dict:
     log("rows: live %d -> new %d (%+d)", len(b), len(a), len(a) - len(b))
     period = "Date" if "Date" in b.columns else "Year"
     log("blank %s: live %d, new %d", period, int(b[period].eq("").sum()), int(a[period].eq("").sum()))
+    blanks = {c: (int(b[c].isna().sum()), int(a[c].isna().sum())) for c in values}
+    log("blank cells per column (live, new): %s", blanks)
+    for label, frame in (("live", before), ("new", after)):
+        text = _text_in_numbers(frame, key)
+        if text:
+            log("WARNING %s has text in number columns: %s", label, text)
 
     nb, na = b.groupby(keys).size(), a.groupby(keys).size()
     both = nb.index.intersection(na.index)
@@ -77,6 +121,7 @@ def compare(key: str, before: pd.DataFrame, after: pd.DataFrame) -> dict:
     for label, rows in (("removed", removed), ("added", added)):
         for _, row in rows.head(SAMPLES).iterrows():
             log("  e.g. %s: %s", label, " | ".join(str(v) for v in row.values))
+    _report_relabels(log, keys, values, removed, added)
 
     first_b = b.drop_duplicates(keys).set_index(keys).loc[both]
     first_a = a.drop_duplicates(keys).set_index(keys).loc[both]
@@ -86,7 +131,7 @@ def compare(key: str, before: pd.DataFrame, after: pd.DataFrame) -> dict:
         if x.dtype == object or y.dtype == object:
             diff = x.astype(str).ne(y.astype(str))
         else:
-            diff = ~(np.isclose(x, y, rtol=1e-9, atol=0.01) | (x.isna() & y.isna()))
+            diff = ~(np.isclose(x, y, **TOLERANCE) | (x.isna() & y.isna()))
         n = int(diff.sum())
         changed_total += n
         if n:
