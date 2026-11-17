@@ -46,6 +46,14 @@ TRANSFORMS = {
     "airports": "pipeline.transforms.airports",
 }
 
+# Skipped by the default "run all"; still runnable by name for manual testing.
+PAUSED = {
+    # The Python port only re-copies the frozen legacy tabs. The NAPIC Excel
+    # path R appended (2020/2021 onwards) is missing, so a successful write
+    # would wipe those rows from each sheet's "data" tab. Unpause once ported.
+    "property",
+}
+
 
 def run_transform(name: str, dry_run: bool = False) -> bool:
     """Run a single named transform. Returns True on success."""
@@ -113,7 +121,9 @@ def main():
             print(f"  {name:20s} ({module_path})")
         return
 
-    names = args.transforms or list(TRANSFORMS.keys())
+    names = args.transforms or [n for n in TRANSFORMS if n not in PAUSED]
+    if not args.transforms and PAUSED:
+        logger.warning("Skipping paused transforms: %s", ", ".join(sorted(PAUSED)))
 
     # Validate all names before running
     unknown = [n for n in names if n not in TRANSFORMS]
