@@ -25,13 +25,15 @@ SAMPLES = 8
 # Tight enough to catch 0.2 vs 0.205 in "Unsold value (RM mil)"; rtol absorbs
 # float noise in large values such as R's RM-million x 1e6 products.
 TOLERANCE = {"rtol": 1e-9, "atol": 1e-6}
+# Value columns holding text, compared as text (everything else is numeric).
+TEXT_VALUES = {"newly_launched": {"Data status"}}
 
 
 def _text_in_numbers(df: pd.DataFrame, key: str) -> dict[str, list]:
     """Non-blank values in number columns that are not numbers (e.g. "N/A")."""
     found = {}
     for col in prop.OUTPUT_COLUMNS[key]:
-        if col in KEYS[key] or col in prop.DATE_COLUMNS[key] or col not in df.columns:
+        if col in KEYS[key] or col in prop.DATE_COLUMNS[key] or col in TEXT_VALUES.get(key, set()) or col not in df.columns:
             continue
         raw = df[col].map(lambda v: "" if pd.isna(v) else str(v).strip())
         bad = raw.ne("") & pd.to_numeric(raw.str.lstrip("'"), errors="coerce").isna()
@@ -46,7 +48,7 @@ def _normalise(df: pd.DataFrame, key: str) -> pd.DataFrame:
     for col in out.columns:
         if col in prop.DATE_COLUMNS[key]:
             out[col] = prop.sheet_dates(out[col].rename(col)).dt.strftime("%Y-%m-%d").fillna("")
-        elif col in KEYS[key]:
+        elif col in KEYS[key] or col in TEXT_VALUES.get(key, set()):
             out[col] = out[col].map(lambda v: "" if pd.isna(v) else str(v).strip())
             out[col] = out[col].str.replace(r"^(\d+)\.0$", r"\1", regex=True)
         else:
@@ -98,7 +100,7 @@ def compare(key: str, before: pd.DataFrame, after: pd.DataFrame) -> dict:
     log("rows: live %d -> new %d (%+d)", len(b), len(a), len(a) - len(b))
     period = "Date" if "Date" in b.columns else "Year"
     log("blank %s: live %d, new %d", period, int(b[period].eq("").sum()), int(a[period].eq("").sum()))
-    blanks = {c: (int(b[c].isna().sum()), int(a[c].isna().sum())) for c in values}
+    blanks = {c: (int((b[c].isna() | b[c].eq("")).sum()), int((a[c].isna() | a[c].eq("")).sum())) for c in values}
     log("blank cells per column (live, new): %s", blanks)
     for label, frame in (("live", before), ("new", after)):
         text = _text_in_numbers(frame, key)

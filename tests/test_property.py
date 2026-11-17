@@ -413,3 +413,13 @@ def test_parsers_on_real_napic_files():
         assert len(pn.parse_unsold(_sheets(path, "TABLE [246]"))) == 363
     for path in glob.glob(f"{NAPIC_DIR}/launched/*"):
         assert len(pn.newly_launched_table(_sheets(path, "PULAU PINANG")["PULAU PINANG"])) == 1815
+
+
+def test_preview_compares_data_status_as_text():
+    from pipeline.transforms import property_preview as pv
+
+    base = {"Date": [44197], "District": ["Timur Laut"], "Property type": ["Flat"], "Price range": ["x"],
+            "Newly launches": [5], "Sold units (W3)": [1], "Updated as of": [44197]}
+    live = pd.DataFrame({**base, "Data status": ["preliminary"]})
+    new = pd.DataFrame({**base, "Date": ["2021-01-01"], "Updated as of": ["2021-01-01"], "Data status": [""]})
+    assert pv.compare("newly_launched", live, new)["values_changed"] == 1  # losing "preliminary" is a change
