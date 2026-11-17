@@ -169,6 +169,9 @@ def read_google_sheet(
 
     Equivalent to R's googlesheets4::read_sheet().
     Retries with exponential backoff on transient failures.
+    Extra keyword arguments go to gspread's get_all_records(), e.g.
+    value_render_option="UNFORMATTED_VALUE" to get date cells as serial
+    numbers instead of their display text (R's read_sheet returned real dates).
     """
     import gspread
     from google.oauth2.service_account import Credentials
@@ -187,7 +190,7 @@ def read_google_sheet(
         try:
             spreadsheet = gc.open_by_key(spreadsheet_id)
             worksheet = spreadsheet.worksheet(sheet_name)
-            data = worksheet.get_all_records()
+            data = worksheet.get_all_records(**kwargs)
 
             df = pd.DataFrame(data)
             logger.info(

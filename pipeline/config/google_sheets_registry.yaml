@@ -81,6 +81,13 @@ transforms:
       house_prices: "1NlDArTSUDBGTnJ8H9t6e1AJbdFIQU99dyYTTUW6dWa0"
       unsold: "1IE2m_JUXVM2CQuXzh0L9eCvPqivr6nQq1Gvmj_0GLkw"
       newly_launched: "1560AqfA5UJRVa3N5y29su3xDRy9sQxWu0ehA-AktOfA"
+    drive_files:
+      # NAPIC release folders under "Raw Data/12. Property/NAPIC" (shared drive).
+      # Someone downloads each new NAPIC release into these by hand.
+      napic_sales: "1j9SjTy-4_idQ-tWkz_oqrze2Wl8-xVdX"      # Property Sales Data/Proper Sales Data- Penang (by Quarter)
+      napic_prices: "1hMbRZnuAeVBqREMCvPO5OqRgZPUX0ACP"     # Prices/Residential Prices/Annual price update
+      napic_status: "1tQ8pTfrQwmGJEhdNV26Kj8k1iV3FR9qa"     # Market Status Report
+      napic_launched: "1OOGscIy7guP7muEHaeODpr_GwSeLScnc"   # Market Status Report/Newly Launched Residential Units And The Sales Performances
 
   trade:
     sheets:

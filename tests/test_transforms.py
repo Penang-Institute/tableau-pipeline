@@ -481,7 +481,7 @@ class TestOrchestrator:
 
         # These transforms use different entry point patterns
         # (multiple sub-transforms, or direct main() without transform())
-        skip = {"copy_opendosm", "hospitals", "gender", "gross_income"}
+        skip = {"copy_opendosm", "hospitals", "gender", "gross_income", "property_preview"}
         for name, module_path in TRANSFORMS.items():
             if name in skip:
                 continue
@@ -866,17 +866,7 @@ class TestPopulationEthnicity:
         assert isinstance(result, pd.DataFrame)
 
 
-class TestProperty:
-    """Test property market transform."""
-
-    def test_transform_graceful_skip(self):
-        """Should return dict of empty DataFrames when paths unavailable."""
-        from pipeline.transforms.property import transform
-
-        result = transform()
-        assert isinstance(result, dict)
-        assert "transactions" in result
-        assert "house_prices" in result
+# Property tests live in tests/test_property.py.
 
 
 class TestTradeHS:
@@ -1607,31 +1597,6 @@ class TestPopulationEthnicityComprehensive:
         expected_keys = {"penang", "malaysia", "district_ethnicity",
                          "district_sex", "fertility"}
         assert set(result.keys()) == expected_keys
-
-
-# ---------------------------------------------------------------------------
-# Property — comprehensive tests
-# ---------------------------------------------------------------------------
-
-class TestPropertyComprehensive:
-    """Comprehensive tests for property market transform."""
-
-    def test_transform_returns_dict_with_four_keys(self):
-        """transform() must return dict with all 4 property categories."""
-        from pipeline.transforms.property import transform
-
-        result = transform()
-        assert isinstance(result, dict)
-        expected_keys = {"transactions", "house_prices", "unsold", "newly_launched"}
-        assert set(result.keys()) == expected_keys
-
-    def test_transform_values_are_dataframes(self):
-        """All values in transform() result must be DataFrames."""
-        from pipeline.transforms.property import transform
-
-        result = transform()
-        for key, val in result.items():
-            assert isinstance(val, pd.DataFrame), f"{key} is not a DataFrame"
 
 
 # ---------------------------------------------------------------------------

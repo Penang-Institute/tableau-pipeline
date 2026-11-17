@@ -65,16 +65,28 @@ def dataframe_to_rows(df: pd.DataFrame) -> list[list[str]]:
     return out.where(pd.notna(out), "").astype(str).values.tolist()
 
 
+class WriteRefused(RuntimeError):
+    """write_sheet declined to replace a tab because the new data looks wrong."""
+
+
 def write_sheet(
     df: pd.DataFrame,
     spreadsheet_id: str,
     sheet_name: str,
     retries: int = _DEFAULT_RETRIES,
+    value_input_option: str = "RAW",
+    max_shrink: float | None = None,
 ) -> None:
     """Write a DataFrame to a specific sheet tab, replacing all content.
 
     Equivalent to R's googlesheets4::sheet_write().
     Retries with exponential backoff on transient failures.
+
+    value_input_option: "RAW" stores every cell as text (the default);
+        "USER_ENTERED" lets Sheets type numbers and ISO dates like R did.
+    max_shrink: if set, refuse (WriteRefused) to replace a tab when the new
+        data has more than this fraction fewer rows than the tab holds now,
+        e.g. 0.1 blocks a write that would drop over 10% of the rows.
     """
     for attempt in range(retries):
         try:
@@ -87,18 +99,28 @@ def write_sheet(
                 logger.info("Worksheet '%s' not found, creating new: %s", sheet_name, e)
                 worksheet = spreadsheet.add_worksheet(title=sheet_name, rows=1, cols=1)
 
+            if max_shrink is not None:
+                existing = max(len(worksheet.get_all_values()) - 1, 0)
+                if len(df) < existing * (1 - max_shrink):
+                    raise WriteRefused(
+                        f"Refusing to replace '{sheet_name}' in {spreadsheet_id}: "
+                        f"{existing} rows now, only {len(df)} new rows"
+                    )
+
             worksheet.clear()
 
             # Convert all values AND headers to strings to avoid JSON errors
             # (a NaN column name from a read sheet is a non-JSON-compliant float).
             header = [str(c) for c in df.columns]
             values = dataframe_to_rows(df)
-            worksheet.update([header] + values)
+            worksheet.update([header] + values, value_input_option=value_input_option)
 
             logger.info(
                 "Wrote %d rows to sheet '%s' in %s", len(df), sheet_name, spreadsheet_id
             )
             return
+        except WriteRefused:
+            raise
         except Exception as e:
             if attempt == retries - 1:
                 raise
