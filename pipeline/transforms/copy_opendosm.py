@@ -259,7 +259,10 @@ def transform() -> dict[str, pd.DataFrame]:
 
 # Files on hold — do not overwrite on Drive until OpenDOSM publishes newer data.
 SKIP_FILES: set[str] = {
-    "lfs_qtr_state.csv",  # On hold: Drive has Q4 2025, OpenDOSM only Q3 2025
+    # On hold: the Drive copy is hand-maintained (d/m/yyyy dates, to Q4 2025).
+    # OpenDOSM now runs to Q3 2026 but in yyyy-mm-dd, and has revised 2024-25,
+    # so a raw overwrite changes both the format and ~127 historical rows.
+    "lfs_qtr_state.csv",
     "ppi.csv",  # Handled by ppi.py transform (raw OpenDOSM format breaks Tableau)
 }
 

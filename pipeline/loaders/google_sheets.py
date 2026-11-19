@@ -216,6 +216,23 @@ def append_new_months_to_sheet(
             time.sleep(wait)
 
 
+def append_rows_to_sheet(df_new: pd.DataFrame, spreadsheet_id: str, sheet_name: str) -> None:
+    """Add df_new below the existing rows of a tab. Never clears or rewrites.
+
+    For tabs holding hand-kept history the pipeline cannot regenerate: existing
+    cells are not read back and re-sent, so their types and formatting survive.
+    Columns follow the tab's own header; a missing column raises before any
+    write. Deliberately no retry: an append is not idempotent, so a retry after
+    an ambiguous failure could duplicate rows. Fail loudly instead; the caller
+    recomputes its delta from the live tab on the next run.
+    """
+    ws = _get_gspread_client().open_by_key(spreadsheet_id).worksheet(sheet_name)
+    header = ws.row_values(1)
+    rows = dataframe_to_rows(df_new[header])
+    ws.append_rows(rows, value_input_option="USER_ENTERED")
+    logger.info("Appended %d rows to sheet '%s' in %s", len(rows), sheet_name, spreadsheet_id)
+
+
 def upsert_rows_to_sheet(
     df_new: pd.DataFrame,
     spreadsheet_id: str,
