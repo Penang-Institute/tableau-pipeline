@@ -488,6 +488,23 @@ class TestOrchestrator:
             module = importlib.import_module(module_path)
             assert hasattr(module, "transform"), f"{name} missing transform() function"
 
+    def test_paused_skipped_by_default_but_runnable_by_name(self, monkeypatch):
+        """Paused transforms are left out of "run all" yet still run when named."""
+        from pipeline import orchestrator
+
+        ran = []
+        monkeypatch.setattr(orchestrator, "run_transform", lambda n, dry_run=False: ran.append(n) or True)
+        monkeypatch.setattr(orchestrator, "PAUSED", {"property"})
+
+        monkeypatch.setattr("sys.argv", ["orchestrator"])
+        orchestrator.main()
+        assert "property" not in ran and "trade" in ran
+
+        ran.clear()
+        monkeypatch.setattr("sys.argv", ["orchestrator", "property"])
+        orchestrator.main()
+        assert ran == ["property"]
+
 
 # ---------------------------------------------------------------------------
 # Fetcher tests
