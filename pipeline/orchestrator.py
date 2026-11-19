@@ -44,14 +44,16 @@ TRANSFORMS = {
     "trade_hs": "pipeline.transforms.trade_hs",
     "trade": "pipeline.transforms.trade",
     "airports": "pipeline.transforms.airports",
+    "property_preview": "pipeline.transforms.property_preview",
 }
 
 # Skipped by the default "run all"; still runnable by name for manual testing.
 PAUSED = {
-    # The Python port only re-copies the frozen legacy tabs. The NAPIC Excel
-    # path R appended (2020/2021 onwards) is missing, so a successful write
-    # would wipe those rows from each sheet's "data" tab. Unpause once ported.
+    # NAPIC step now ported. Unpause only after property_preview shows the
+    # expected changes and the service account has been granted Editor.
     "property",
+    # Read-only dry run of property; manual only, never part of the schedule.
+    "property_preview",
 }
 
 
