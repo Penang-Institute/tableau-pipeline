@@ -115,6 +115,8 @@ def main():
         logger.error("Failed: %s", ", ".join(failed))
 
     logger.info("CSV files saved in: %s", dated_output_dir(_BASE_OUTPUT_DIR).resolve())
+    if fail:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

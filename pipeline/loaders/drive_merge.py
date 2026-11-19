@@ -75,6 +75,17 @@ def merge_new_periods(
     return pd.concat([cur, add], ignore_index=True)
 
 
+def read_live_csv(raw: bytes) -> pd.DataFrame:
+    """Parse the live file with every column as text, so a rewrite is lossless.
+
+    Default type inference turns an all-numeric code column (trade HS chapters
+    "01".."97") into int64 and strips the leading zero from every existing row
+    on each append. Text in, text out keeps untouched rows byte-identical (cells such as
+    "NA" stay as written instead of becoming blank).
+    """
+    return pd.read_csv(io.BytesIO(raw), dtype=str, keep_default_na=False)
+
+
 def _drive_service():
     from google.oauth2.service_account import Credentials
     from googleapiclient.discovery import build
@@ -108,11 +119,8 @@ def append_periods_to_drive_csv(
 
     if existing:
         fid = existing[0]["id"]
-        cur = pd.read_csv(
-            io.BytesIO(service.files().get_media(
-                fileId=fid, supportsAllDrives=True).execute()),
-            dtype={date_col: str},
-        )
+        cur = read_live_csv(service.files().get_media(
+            fileId=fid, supportsAllDrives=True).execute())
         merged = merge_new_periods(cur, df_new, date_col)
         if len(merged) < len(cur):
             raise RuntimeError(
