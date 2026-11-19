@@ -11,10 +11,47 @@ Usage:
 import argparse
 import importlib
 import logging
+import os
 import sys
 import time
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_CONFIG_DIR = Path(__file__).resolve().parent / "config"
+
+
+def validate_credentials() -> bool:
+    """Check that Google service account credentials exist and are valid.
+
+    Returns True if valid, False otherwise.
+    """
+    creds_path = os.environ.get(
+        "GOOGLE_APPLICATION_CREDENTIALS",
+        str(_CONFIG_DIR / "service_account.json"),
+    )
+    if not os.path.exists(creds_path):
+        logger.error(
+            "Google credentials not found at %s. "
+            "Set GOOGLE_APPLICATION_CREDENTIALS or place service_account.json in pipeline/config/",
+            creds_path,
+        )
+        return False
+
+    try:
+        from google.oauth2.service_account import Credentials
+        from googleapiclient.discovery import build
+
+        creds = Credentials.from_service_account_file(
+            creds_path, scopes=["https://www.googleapis.com/auth/drive.metadata.readonly"]
+        )
+        service = build("drive", "v3", credentials=creds)
+        service.about().get(fields="user").execute()
+        logger.info("Credentials validated: %s", creds_path)
+        return True
+    except Exception as e:
+        logger.error("Credentials invalid or expired (%s): %s", creds_path, e)
+        return False
 
 # Transform registry: name → module path
 # Order matters — this defines the default execution order (DAG-like).
@@ -122,6 +159,9 @@ def main():
         for name, module_path in TRANSFORMS.items():
             print(f"  {name:20s} ({module_path})")
         return
+
+    if not args.dry_run and not validate_credentials():
+        sys.exit(1)
 
     names = args.transforms or [n for n in TRANSFORMS if n not in PAUSED]
     if not args.transforms and PAUSED:

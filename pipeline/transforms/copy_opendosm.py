@@ -10,7 +10,10 @@ Source: opendosm.tsv manifest
 Output: Google Drive shared drive
 """
 
+from __future__ import annotations
+
 import asyncio
+import hashlib
 import logging
 import os
 import tempfile
@@ -143,9 +146,31 @@ def _resolve_drive_folder(
     return parent_id
 
 
+def _get_drive_file_md5(service, shared_drive_id: str, folder_id: str, filename: str) -> str | None:
+    """Get the MD5 checksum of an existing file on Drive, or None if not found."""
+    safe_name = filename.replace("\\", "\\\\").replace("'", "\\'")
+    query = (
+        f"name='{safe_name}' and '{folder_id}' in parents "
+        f"and trashed=false"
+    )
+    resp = service.files().list(
+        q=query,
+        fields="files(id, md5Checksum)",
+        supportsAllDrives=True,
+        includeItemsFromAllDrives=True,
+        corpora="drive",
+        driveId=shared_drive_id,
+    ).execute()
+    files = resp.get("files", [])
+    if files:
+        return files[0].get("md5Checksum")
+    return None
+
+
 def copy_to_gdrive(
     manifest: pd.DataFrame,
     skip_files: set[str] | None = None,
+    only_changed: bool = True,
 ) -> None:
     """Upload downloaded files to Google Drive shared drive.
 
@@ -155,13 +180,14 @@ def copy_to_gdrive(
 
     Args:
         skip_files: Set of filenames to exclude from upload (e.g. on-hold files).
+        only_changed: If True, skip files whose MD5 matches the Drive copy (default).
     """
     skip_files = skip_files or set()
     try:
         from googleapiclient.discovery import build
         from google.oauth2.service_account import Credentials
     except ImportError:
-        logger.warning("google-api-python-client not installed — skipping Drive upload")
+        logger.warning("google-api-python-client not installed - skipping Drive upload")
         return
 
     creds_path = os.environ.get(
@@ -169,7 +195,7 @@ def copy_to_gdrive(
         str(Path(__file__).resolve().parent.parent / "config" / "service_account.json"),
     )
     if not os.path.exists(creds_path):
-        logger.warning("Service account credentials not found — skipping Drive upload")
+        logger.warning("Service account credentials not found - skipping Drive upload")
         return
 
     from pipeline.loaders.google_sheets import get_drive_folder_id
@@ -180,10 +206,11 @@ def copy_to_gdrive(
 
     shared_drive_id = get_drive_folder_id("raw_data_shared_drive")
 
-    # Cache resolved folder paths → IDs to avoid redundant API calls
     folder_cache: dict[str, str] = {}
 
     from pipeline.loaders.google_sheets import upload_to_drive
+
+    uploaded, skipped_hold, skipped_identical = 0, 0, 0
 
     for _, row in manifest[manifest["downloaded"]].iterrows():
         src = Path(row["local_path"])
@@ -191,6 +218,7 @@ def copy_to_gdrive(
             continue
         if src.name in skip_files:
             logger.info("Skipping %s (on hold)", src.name)
+            skipped_hold += 1
             continue
 
         dest_folder_path = row["destination"]
@@ -198,11 +226,24 @@ def copy_to_gdrive(
             folder_id = _resolve_drive_folder(
                 service, shared_drive_id, dest_folder_path, folder_cache
             )
+
+            if only_changed:
+                # Compare content, not length: a revised figure (1.23 -> 1.24) keeps the same size.
+                drive_md5 = _get_drive_file_md5(service, shared_drive_id, folder_id, src.name)
+                local_md5 = hashlib.md5(src.read_bytes()).hexdigest()
+                if drive_md5 is not None and drive_md5 == local_md5:
+                    skipped_identical += 1
+                    continue
+
             upload_to_drive(src, folder_id, file_name=src.name)
+            uploaded += 1
         except Exception as e:
             logger.warning("Failed to upload %s to '%s': %s", src.name, dest_folder_path, e)
 
-    logger.info("Uploaded files to Google Drive shared drive")
+    logger.info(
+        "Drive sync complete: %d uploaded, %d unchanged, %d on hold",
+        uploaded, skipped_identical, skipped_hold,
+    )
 
 
 def transform() -> dict[str, pd.DataFrame]:
@@ -219,6 +260,7 @@ def transform() -> dict[str, pd.DataFrame]:
 # Files on hold — do not overwrite on Drive until OpenDOSM publishes newer data.
 SKIP_FILES: set[str] = {
     "lfs_qtr_state.csv",  # On hold: Drive has Q4 2025, OpenDOSM only Q3 2025
+    "ppi.csv",  # Handled by ppi.py transform (raw OpenDOSM format breaks Tableau)
 }
 
 

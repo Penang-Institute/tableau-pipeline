@@ -495,6 +495,8 @@ class TestOrchestrator:
         ran = []
         monkeypatch.setattr(orchestrator, "run_transform", lambda n, dry_run=False: ran.append(n) or True)
         monkeypatch.setattr(orchestrator, "PAUSED", {"property"})
+        # Pause logic is under test here, not Google auth (CI has no key file).
+        monkeypatch.setattr(orchestrator, "validate_credentials", lambda: True)
 
         monkeypatch.setattr("sys.argv", ["orchestrator"])
         orchestrator.main()
@@ -504,6 +506,25 @@ class TestOrchestrator:
         monkeypatch.setattr("sys.argv", ["orchestrator", "property"])
         orchestrator.main()
         assert ran == ["property"]
+
+    def test_missing_credentials_fail_before_any_transform_runs(self, monkeypatch, tmp_path):
+        """A missing key file stops the run with exit 1 and runs nothing."""
+        from pipeline import orchestrator
+
+        ran = []
+        monkeypatch.setattr(orchestrator, "run_transform", lambda n, dry_run=False: ran.append(n) or True)
+        monkeypatch.setenv("GOOGLE_APPLICATION_CREDENTIALS", str(tmp_path / "absent.json"))
+
+        assert orchestrator.validate_credentials() is False
+
+        monkeypatch.setattr("sys.argv", ["orchestrator"])
+        with pytest.raises(SystemExit) as exc:
+            orchestrator.main()
+        assert exc.value.code == 1 and ran == []
+
+        # --dry-run needs no credentials
+        monkeypatch.setattr("sys.argv", ["orchestrator", "--dry-run"])
+        orchestrator.main()
 
 
 # ---------------------------------------------------------------------------
