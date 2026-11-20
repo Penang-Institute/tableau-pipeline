@@ -19,8 +19,13 @@ from pathlib import Path
 import pandas as pd
 
 from pipeline.config.registry import get_drive_id, get_sheet_id
+from pipeline.fetchers.gdrive import read_google_sheet
 from pipeline.fetchers.opendosm import fetch_parquet
-from pipeline.loaders.google_sheets import write_sheet, update_drive_file
+from pipeline.loaders.google_sheets import (
+    append_rows_to_sheet,
+    update_drive_file,
+    write_sheet,
+)
 from pipeline.loaders.file_writer import write_csv
 from pipeline.utils.opendosm_helpers import (
     clean_opendosm as _clean_opendosm,
@@ -34,6 +39,22 @@ DOSM_BASE = "https://storage.dosm.gov.my/population"
 
 OUTPUT_SHEET_ID = get_sheet_id("population_opendosm", "output")
 DRIVE_FILE_ID = get_drive_id("population_opendosm", "state_csv")
+
+# OpenDOSM codes all-ethnicity as "overall". The R script mapped that to "Total";
+# ETHNICITY_MAP in opendosm_helpers only maps "overall_ethnicity", so "overall"
+# is cleaned to "Overall" and a filter on "Total" alone matches nothing (the
+# by-sex tab got 0 rows on every run since the Python port). Accept both here.
+# The root-cause fix is adding "overall" to ETHNICITY_MAP, but that relabels
+# live Tableau sources, so it is deferred until the workbooks are checked.
+_ALL_ETHNICITIES = ["Total", "Overall"]
+DISTRICT_SEX_TAB = "pop-district-sex"
+
+
+def rows_for_missing_years(new: pd.DataFrame, live_years) -> pd.DataFrame:
+    """Rows of new whose Year is absent from the live tab (append-only delta)."""
+    have = {int(y) for y in live_years if str(y).strip()}
+    new = new.dropna(subset=["Year"])  # legacy rows with an unparseable date
+    return new[~new["Year"].astype(int).isin(have)]
 
 
 def transform_state() -> pd.DataFrame:
@@ -132,10 +153,13 @@ def transform_district() -> dict[str, pd.DataFrame]:
     # --- District by Sex ---
     district_sex = district_cleaned[
         (district_cleaned["Age"].isin(["overall", "Total", "overall_age"])) &
-        (district_cleaned["Gender"] != "Total") &
-        (district_cleaned["Ethnic"] == "Total") &
+        (district_cleaned["Ethnic"].isin(_ALL_ETHNICITIES)) &
         (district_cleaned.get("state", "") == "Pulau Pinang")
     ].copy()
+    # The live tab's 2023-24 rows carry a per-district both-sexes row labelled
+    # "Overall". R did not build those from OpenDOSM (they most likely came from
+    # the legacy CSV), so keeping them for new years is an assumption.
+    district_sex["Gender"] = district_sex["Gender"].replace("Total", "Overall")
 
     if "district" in district_sex.columns:
         district_sex = district_sex.rename(columns={"district": "District"})
@@ -148,7 +172,7 @@ def transform_district() -> dict[str, pd.DataFrame]:
     state_sex = state_cleaned[
         (state_cleaned["Age"].isin(["overall", "Total", "overall_age"])) &
         (state_cleaned["Gender"] != "Total") &
-        (state_cleaned["Ethnic"] == "Total") &
+        (state_cleaned["Ethnic"].isin(_ALL_ETHNICITIES)) &
         (state_cleaned.get("state", "") == "Pulau Pinang")
     ].copy()
     if "state" in state_sex.columns:
@@ -209,11 +233,22 @@ def load(dfs: dict[str, pd.DataFrame]) -> None:
     sheet_map = {
         "malaysia": "pop-msia-age_sex_ethnicity",
         "district_ethnicity": "pop-district-ethnicity",
-        "district_sex": "pop-district-sex",
     }
     for key, sheet_name in sheet_map.items():
         if key in dfs and not dfs[key].empty:
             write_sheet(dfs[key], OUTPUT_SHEET_ID, sheet_name)
+
+    # The live by-sex tab is the R script's last output (2024). Its 2010-19
+    # district rows came from the legacy CSV read above, which is not in the
+    # repo, so a full replace would delete them for good. Only add years the
+    # tab lacks; a failed read raises rather than overwriting.
+    if "district_sex" in dfs and not dfs["district_sex"].empty:
+        live = read_google_sheet(OUTPUT_SHEET_ID, DISTRICT_SEX_TAB)
+        add = rows_for_missing_years(dfs["district_sex"], live.get("Year", []))
+        if add.empty:
+            logger.info("'%s' already current (%d rows)", DISTRICT_SEX_TAB, len(live))
+        else:
+            append_rows_to_sheet(add, OUTPUT_SHEET_ID, DISTRICT_SEX_TAB)
 
 
 def main() -> dict[str, pd.DataFrame]:

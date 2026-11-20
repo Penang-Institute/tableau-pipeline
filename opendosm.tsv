@@ -17,6 +17,8 @@ dosm    	demography/death_toddler_state.csv           	1. Demography/births_and_
 dosm    	demography/death_maternal_state.csv          	1. Demography/births_and_deaths/
 dosm    	demography/fertility.csv                     	1. Demography/births_and_deaths/
 dosm    	demography/fertility_state.csv               	1. Demography/births_and_deaths/
+dosm    	demography/life_expectancy_state.csv         	1. Demography/births_and_deaths/
+dosm    	demography/lifetables_district.csv           	1. Demography/births_and_deaths/
 dosm    	population/population_malaysia.csv           	2. Population & Migration/population/opendosm/
 dosm    	population/population_state.csv              	2. Population & Migration/population/opendosm/
 dosm    	population/population_district.csv           	2. Population & Migration/population/opendosm/

@@ -2163,3 +2163,61 @@ class TestGDPCapitaStatesUnreadableInbox:
         wrong = self._xls({"A1": pd.DataFrame([["x"]])})
         with pytest.raises(RuntimeError, match="nosheet.xlsx"):
             self._run({"nosheet.xlsx": wrong})
+
+
+def test_district_sex_survives_overall_code_and_only_adds_missing_years(monkeypatch):
+    """OpenDOSM codes all-ethnicity as "overall"; by-sex must not go empty.
+
+    And the load delta must be append-only: years already on the live tab
+    (R-era history back to 1970) are never rewritten.
+    """
+    from pipeline.transforms import population_opendosm as po
+
+    def frame(extra: dict) -> pd.DataFrame:
+        rows = [
+            {"state": "Pulau Pinang", "date": f"{y}-01-01", "sex": s, "age": "overall",
+             "ethnicity": "overall", "population": 1.0, **extra}
+            for y in (2024, 2025) for s in ("both", "male", "female")
+        ]
+        return pd.DataFrame(rows)
+
+    frames = {"population_district": frame({"district": "Timur Laut"}), "population_state": frame({})}
+    monkeypatch.setattr(po, "fetch_parquet", lambda url: frames[url.rsplit("/", 1)[1].removesuffix(".parquet")])
+
+    sex = po.transform_district()["district_sex"]
+    assert not sex.empty
+    by_district = sex.groupby("District")["Gender"].apply(set).to_dict()
+    assert by_district == {
+        "Timur Laut": {"Male", "Female", "Overall"},   # district keeps its both-sexes row
+        "Pulau Pinang": {"Male", "Female"},            # state row is male/female only
+    }
+
+    add = po.rows_for_missing_years(sex, live_years=["1970", 2024, ""])
+    assert set(add["Year"]) == {2025} and len(add) == 5
+
+
+def test_district_sex_load_appends_and_never_clears_the_live_tab(monkeypatch):
+    """The by-sex tab's history cannot be regenerated: load must only append."""
+    from unittest.mock import MagicMock
+    from pipeline.loaders import google_sheets
+    from pipeline.transforms import population_opendosm as po
+
+    header = ["District", "Population ('000)", "Gender", "Year", "Updated as of"]
+    ws = MagicMock()
+    ws.row_values.return_value = header
+    client = MagicMock()
+    client.open_by_key.return_value.worksheet.return_value = ws
+    monkeypatch.setattr(google_sheets, "_get_gspread_client", lambda: client)
+    monkeypatch.setattr(po, "read_google_sheet", lambda *a, **k: pd.DataFrame({"Year": [1970, 2024]}))
+
+    new = pd.DataFrame({
+        "District": ["Timur Laut", "Timur Laut"], "Gender": ["Male", "Male"],
+        "Year": [2024, 2025], "Population ('000)": [1.0, 2.5], "Updated as of": [2026, 2026],
+    })
+    po.load({"district_sex": new})
+
+    ws.clear.assert_not_called()
+    ws.update.assert_not_called()
+    (rows,), kwargs = ws.append_rows.call_args
+    assert rows == [["Timur Laut", "2.5", "Male", "2025", "2026"]]   # 2025 only, in header order
+    assert kwargs == {"value_input_option": "USER_ENTERED"}
