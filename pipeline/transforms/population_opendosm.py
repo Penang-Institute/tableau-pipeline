@@ -40,9 +40,12 @@ DOSM_BASE = "https://storage.dosm.gov.my/population"
 OUTPUT_SHEET_ID = get_sheet_id("population_opendosm", "output")
 DRIVE_FILE_ID = get_drive_id("population_opendosm", "state_csv")
 
-# OpenDOSM renamed the all-ethnicity code from "overall_ethnicity" (cleaned to
-# "Total") to "overall" (cleaned to "Overall"). Accept both, or the by-sex
-# filter matches nothing and the tab silently stops updating.
+# OpenDOSM codes all-ethnicity as "overall". The R script mapped that to "Total";
+# ETHNICITY_MAP in opendosm_helpers only maps "overall_ethnicity", so "overall"
+# is cleaned to "Overall" and a filter on "Total" alone matches nothing (the
+# by-sex tab got 0 rows on every run since the Python port). Accept both here.
+# The root-cause fix is adding "overall" to ETHNICITY_MAP, but that relabels
+# live Tableau sources, so it is deferred until the workbooks are checked.
 _ALL_ETHNICITIES = ["Total", "Overall"]
 DISTRICT_SEX_TAB = "pop-district-sex"
 
@@ -153,7 +156,9 @@ def transform_district() -> dict[str, pd.DataFrame]:
         (district_cleaned["Ethnic"].isin(_ALL_ETHNICITIES)) &
         (district_cleaned.get("state", "") == "Pulau Pinang")
     ].copy()
-    # The live tab carries a per-district both-sexes row labelled "Overall".
+    # The live tab's 2023-24 rows carry a per-district both-sexes row labelled
+    # "Overall". R did not build those from OpenDOSM (they most likely came from
+    # the legacy CSV), so keeping them for new years is an assumption.
     district_sex["Gender"] = district_sex["Gender"].replace("Total", "Overall")
 
     if "district" in district_sex.columns:
@@ -233,9 +238,10 @@ def load(dfs: dict[str, pd.DataFrame]) -> None:
         if key in dfs and not dfs[key].empty:
             write_sheet(dfs[key], OUTPUT_SHEET_ID, sheet_name)
 
-    # The live by-sex tab holds hand-kept history (1970 onward, some years with
-    # short district labels) that OpenDOSM's district file does not carry. Only
-    # add years the tab lacks; a failed read raises rather than overwriting.
+    # The live by-sex tab is the R script's last output (2024). Its 2010-19
+    # district rows came from the legacy CSV read above, which is not in the
+    # repo, so a full replace would delete them for good. Only add years the
+    # tab lacks; a failed read raises rather than overwriting.
     if "district_sex" in dfs and not dfs["district_sex"].empty:
         live = read_google_sheet(OUTPUT_SHEET_ID, DISTRICT_SEX_TAB)
         add = rows_for_missing_years(dfs["district_sex"], live.get("Year", []))

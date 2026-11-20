@@ -219,7 +219,7 @@ def append_new_months_to_sheet(
 def append_rows_to_sheet(df_new: pd.DataFrame, spreadsheet_id: str, sheet_name: str) -> None:
     """Add df_new below the existing rows of a tab. Never clears or rewrites.
 
-    For tabs holding hand-kept history the pipeline cannot regenerate: existing
+    For tabs holding history the pipeline cannot regenerate: existing
     cells are not read back and re-sent, so their types and formatting survive.
     Columns follow the tab's own header; a missing column raises before any
     write. Deliberately no retry: an append is not idempotent, so a retry after

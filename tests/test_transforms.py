@@ -2166,10 +2166,10 @@ class TestGDPCapitaStatesUnreadableInbox:
 
 
 def test_district_sex_survives_overall_code_and_only_adds_missing_years(monkeypatch):
-    """OpenDOSM now codes all-ethnicity as "overall"; by-sex must not go empty.
+    """OpenDOSM codes all-ethnicity as "overall"; by-sex must not go empty.
 
     And the load delta must be append-only: years already on the live tab
-    (hand-kept history back to 1970) are never rewritten.
+    (R-era history back to 1970) are never rewritten.
     """
     from pipeline.transforms import population_opendosm as po
 
