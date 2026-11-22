@@ -1,0 +1,148 @@
+# Site dashboard -> Tableau Public workbook -> the data it is built from.
+# Read by freshness_check.py. One entry per page in pistats/dashboards/.
+#
+# feed: opendosm (weekly sync), manual (Hajar drops/edits), mixed, untracked
+# source kinds: sheet (optionally limited to tabs), folder, file (Drive IDs,
+# same IDs as pipeline/config/google_sheets_registry.yaml)
+# archived: true = page lives under dashboards/archive; reported, never fails the run.
+
+main_workbook: &main "1cJe-flqOiDEA9Q9MFe2LCIcY8PmmEc_M3mt-TD7eKQM"
+
+dashboards:
+  - page: econ/cpi
+    title: Consumer Price Index
+    workbook: ConsumerPriceIndex_16506163722350
+    view: ConsumerPriceIndex
+    feed: opendosm
+    sources:
+      - {name: CPI opendosm folder, folder: "1_1FRwXto-o0B2udDH7EmDkfCBQJjcIA5"}
+
+  - page: econ/gdp
+    title: Gross Domestic Product
+    workbook: PenangsGrossDomesticProduct
+    view: GDPbystate
+    feed: mixed
+    sources:
+      - {name: gdp_econ_activity, sheet: "1jSk6_GqU4PawtlE1RtIidSZTH6Fya3eT9bbRJmYu2GQ"}
+      - {name: gdp_capita_states, sheet: "1Ua9_28dpHeWlea9QfbkYrGSSuBtwL2pXOWobpX8A_1Q"}
+      - {name: gdp_quarterly folder, folder: "12EuOOIBzkR1jOlDnYU5Jyqm1Ihb2VO3O"}
+      - {name: GDP_inbox (Hajar), folder: "1tHl-wenETDuCGvNAh5SkMDZhO4G6D8Vy"}
+
+  - page: econ/labour
+    title: Labour Force
+    workbook: PenangsLabourForce
+    view: Principalstatistics
+    feed: opendosm
+    sources:
+      - {name: principal, sheet: "1u5uqo2mq0TgK91waehOv90R0DCBhLW4O_ld98OSTGNc"}
+      - {name: lfpr, sheet: "1itY9qPWAxZeuVGM_V8mlaY7XWQHYl0-KBFb5A66uOG0"}
+      - {name: age, sheet: "1-0jnCcFG4Gzz_W0YEvR4BOStdrO_6ghXqjXWD9kpK4Y"}
+      - {name: highest_cert, sheet: "1weNYqIWb2DVw7nttBjODbW90Mp6em9iUrVky5TlE_xc"}
+      - {name: marital, sheet: "1BikH6c7i__EcnZ6s5GYnSfJHIYiE3igM_f74fsxYynk"}
+      - {name: occupation, sheet: "1MRgxT5PpICXs2vgIo0AvRw25JYl5VAAlJsmaTqYzJfc"}
+      - {name: sector, sheet: "1toP18iUXNSvhTcuP_uuOu66I7PDdEWrkUNyrQF4--B4"}
+      - {name: occupation_all_states, sheet: "1jWaIChThG98p4qTVRVy2f31U6aIW1K-yxGr1O4dTLuI"}
+      - {name: labour_demographics, sheet: "1aU1AEcPuKuc3NmFo2JAs2X84jPfrUxDb9fP0130lzJY"}
+
+  - page: econ/trade
+    title: Trade Statistics
+    workbook: PenangsTradeStatistics
+    view: Externaltradebystate
+    feed: manual
+    sources:
+      - {name: trade (exit/entry), sheet: "1zw1vHUE3wkKNEs-A9FZvxfmkXAxxrmSJLuVntxCQ2lc"}
+      - {name: HS monthly folder, folder: "1GmV5OnTkQFcM-t0spl60lb2OO7CIBFm5"}
+      - {name: JAD12_inbox (Hajar), folder: "1zb7OWTg6hU25-7-zoIv--7qDU386JzAg"}
+      - {name: METS HS inbox (Hajar), folder: "1VSr1GksPPExkFgI6fnp6fk9w_oRpZ4qt"}
+
+  - page: sector/finance
+    title: State Finance
+    workbook: PenangsStateFinance
+    view: Overallfinancialposition
+    feed: untracked   # source not in the pipeline; confirm with Hajar
+    sources: []
+
+  - page: sector/grad
+    title: Graduate Employability
+    workbook: PenangsGraduateEmployability
+    view: Graduatedistribution
+    feed: manual
+    sources:
+      - {name: graduates, sheet: "1nF7xCn68s21QLtG9DTH8ug6jXxQphkec3whz_RcJZ80"}
+
+  - page: sector/health
+    title: Health Statistics
+    workbook: PenangsHealthStatistics
+    view: Facilities
+    feed: mixed
+    sources:
+      - name: health tabs
+        sheet: *main
+        tabs: [utilisation_opendosm, Utilisation_bydistrict, Utilisation_bystate, facilities_by_state]
+
+  - page: sector/manf
+    title: Approved Manufacturing Investment
+    workbook: Penangsapprovedmanufacturinginvestment
+    view: InvestmentbyState
+    feed: untracked   # source not in the pipeline; confirm with Hajar
+    sources: []
+
+  - page: sector/prop
+    title: Residential Property
+    workbook: Penangsresidentialproperty
+    view: Supply
+    feed: manual
+    sources:
+      - {name: transactions, sheet: "1U2myOOIdtLoFnbNkENOvgcvOIXkWfzc6JfGxA7_GuZ8"}
+      - {name: house_prices, sheet: "1NlDArTSUDBGTnJ8H9t6e1AJbdFIQU99dyYTTUW6dWa0"}
+      - {name: unsold, sheet: "1IE2m_JUXVM2CQuXzh0L9eCvPqivr6nQq1Gvmj_0GLkw"}
+      - {name: newly_launched, sheet: "1560AqfA5UJRVa3N5y29su3xDRy9sQxWu0ehA-AktOfA"}
+
+  - page: social/gender
+    title: Gender in Penang
+    workbook: Genderstatistics_16161467959570
+    view: Labourforceparticipation
+    feed: mixed
+    sources:
+      - {name: salaries, sheet: "1xCpNqE8mH3XytvPmbihm0GAaDI7xU6flWl7tob6o_Yk"}
+      - {name: women_stats, sheet: "1TRZEheoDgFm7eXck6-VjZjxd5OfhA_LEb0srYwYFhcs"}
+      - {name: parliament file, file: "1-taYcByjP6ntuYOX1jwoOZ5Qjz5JWAt0"}
+
+  - page: social/hhinc
+    title: Household Income
+    workbook: Penangshouseholdincome
+    view: Householdincome
+    feed: opendosm
+    sources:
+      - {name: gross_income, sheet: "1i_yrlpJUHG5IUYUJwV7cWj_b2peDn7KJpFA4_kBkcwU"}
+
+  - page: social/pop
+    title: Population and Demographics
+    workbook: Penangspopulationanddemographics
+    view: Overalltrend
+    feed: opendosm
+    sources:
+      - {name: population_opendosm, sheet: "1iKZnD78AubC--HFKiBsSFSCxQB7l2M15SbNsQW22hUw"}
+      - {name: population_ethnicity, sheet: "1153Rt9d-evlO_q-FLbPRqX7v-_SGCaJWZmgB2W1cr4E"}
+      - {name: demo_mukim, sheet: "1lhV1_RkPMgZURF0G36Fk_EoaeXfGX7c5QQu-B878wj0"}
+      - {name: population_by_state, sheet: *main, tabs: [population_by_state]}
+
+  - page: archive/air
+    title: Air Transport Statistics
+    workbook: PenangsAirTransportStatistics
+    view: ByairportinMalaysia
+    feed: manual
+    archived: true
+    sources:
+      - {name: passengers, sheet: "1cLKz_AjEXswmw3RTaXPUeL430yndRJRb51FdVdqIpW4"}
+      - {name: aircraft, sheet: "1Znur74rgQ9irBFVORfqBmWpO2xk0F3BrGGKvDpXVVmc"}
+      - {name: airport_cargo, sheet: "1OP1GPP3RUikBiqQ8OpagZWlJtOPnKUGyItGzs0AgqZA"}
+
+  - page: archive/maritime
+    title: Maritime
+    workbook: Maritime_17090070885470
+    view: Maritime
+    feed: manual
+    archived: true
+    sources:
+      - {name: maritime_cargo, sheet: "1XDcfC3QcTSTuoImYU16css6EpMoSekpNAO7zC2VPlKU"}

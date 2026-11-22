@@ -1,0 +1,67 @@
+name: Dashboard freshness check
+
+# Runs right after the weekly sync so it sees this week's data, and fails when a
+# live dashboard is older than its data or could not be verified.
+# GitHub emails a failed run to the one account the run is attributed to (for a
+# scheduled sync, whoever last edited its cron), not to repo watchers. That
+# account needs Actions email notifications switched on.
+on:
+  workflow_run:
+    workflows: ["Sync OpenDOSM to Google Drive"]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency: freshness-check   # one run at a time; they share state.json
+
+permissions:
+  contents: write   # commits freshness/state.json + report.md back
+
+jobs:
+  freshness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - run: pip install -r requirements.txt
+
+      - name: Write Google credentials
+        env:
+          GOOGLE_CREDS: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+        run: echo "$GOOGLE_CREDS" > pipeline/config/service_account.json
+
+      - name: Run freshness check
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: pipeline/config/service_account.json
+        run: python freshness_check.py
+
+      - name: Clean up credentials
+        if: always()
+        run: rm -f pipeline/config/service_account.json
+
+      - name: Publish report to run summary
+        if: always()
+        run: cat freshness/report.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload dashboard screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dashboard-screenshots
+          path: freshness/screenshots/
+
+      - name: Commit state and report
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add freshness/state.json freshness/report.md
+          git diff --cached --quiet || git commit -m "chore: weekly freshness state and report"
+          git pull --rebase
+          git push
