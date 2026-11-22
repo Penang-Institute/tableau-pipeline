@@ -81,15 +81,40 @@ def to_state_csv(raw: pd.DataFrame) -> pd.DataFrame:
     })[STATE_CSV_COLUMNS].reset_index(drop=True)
 
 
+# Census counts for 1901 to 1957 (12 states incl. "Peninsular Malaysia", totals
+# by sex only). OpenDOSM starts in 1970, so these cannot be regenerated: the R
+# script read them from Popu_Table_3.xlsx (historical data compiled by HRH
+# Sultan Nazrin Shah) on a G: drive the pipeline cannot reach. The rows here
+# were recovered on 2026-11-22 from the extract inside the published workbook.
+# They feed the dashboard's "Show historical census count" option.
+CENSUS_HISTORY_FILE = Path(__file__).resolve().parent.parent / "data" / "population_state_pre_1970.csv"
+
+
+def load_census_history() -> pd.DataFrame:
+    """Read the pre-1970 census rows. A missing file raises: silently dropping
+    this history is how the live file lost it in July 2026."""
+    return pd.read_csv(CENSUS_HISTORY_FILE)
+
+
+def with_census_history(state_csv: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
+    """Append the census rows older than anything OpenDOSM covers, as R's bind_rows did."""
+    if list(history.columns) != STATE_CSV_COLUMNS:
+        raise ValueError(
+            f"census history has columns {list(history.columns)}, expected {STATE_CSV_COLUMNS}"
+        )
+    older = history[history["year"] < state_csv["year"].min()]
+    return pd.concat([state_csv, older], ignore_index=True)
+
+
 def transform_state() -> pd.DataFrame:
-    """Transform population by state from OpenDOSM."""
+    """Transform population by state from OpenDOSM, plus the pre-1970 census rows."""
     try:
         pop_state = fetch_parquet(f"{DOSM_BASE}/population_state.parquet")
     except Exception as e:
         logger.warning("Failed to fetch population_state: %s", e)
         return pd.DataFrame()
 
-    cleaned = to_state_csv(pop_state)
+    cleaned = with_census_history(to_state_csv(pop_state), load_census_history())
 
     logger.info("Population state transform: %d rows", len(cleaned))
     return cleaned

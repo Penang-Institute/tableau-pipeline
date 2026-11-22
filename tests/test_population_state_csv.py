@@ -83,3 +83,54 @@ def test_csv_text_is_what_tableau_reads():
 def test_transform_state_emits_the_spec_header(mock_fetch):
     mock_fetch.return_value = _raw()
     assert list(transform_state().columns) == STATE_CSV_COLUMNS
+
+
+# --- census history, 1901 to 1957 -------------------------------------------
+
+from pipeline.transforms.population_opendosm import (  # noqa: E402
+    load_census_history,
+    with_census_history,
+)
+
+_KEY = ["state", "sex", "age", "ethnicity", "year"]
+
+
+def test_census_history_file_is_the_144_rows_the_workbook_holds():
+    hist = load_census_history()
+    assert list(hist.columns) == STATE_CSV_COLUMNS
+    assert len(hist) == 144
+    assert sorted(hist["year"].unique()) == [1901, 1911, 1921, 1931, 1947, 1957]
+    assert set(hist["age"]) == {"Total"} and set(hist["ethnicity"]) == {"Total"}
+    assert "Peninsular Malaysia" in set(hist["state"])
+    assert not hist.duplicated(_KEY).any()
+    penang_1901 = hist[(hist["state"] == "Pulau Pinang") & (hist["sex"] == "Total") & (hist["year"] == 1901)]
+    assert penang_1901["population"].tolist() == [248.207]
+
+
+def test_history_is_appended_after_the_opendosm_rows():
+    out = with_census_history(to_state_csv(_raw()), load_census_history())
+    assert list(out.columns) == STATE_CSV_COLUMNS
+    assert len(out) == 6 + 144
+    assert out["year"].iloc[0] == 2024 and out["year"].iloc[-1] < 1970
+    assert pd.api.types.is_integer_dtype(out["year"])
+
+
+def test_history_never_overlaps_years_opendosm_covers():
+    early = to_state_csv(_raw(date=["1947-01-01"] * 6))
+    out = with_census_history(early, load_census_history())
+    assert (out["year"] >= 1947).sum() == 6  # only the OpenDOSM rows remain for 1947 onwards
+    assert set(out["year"]) == {1901, 1911, 1921, 1931, 1947}
+
+
+def test_history_with_wrong_columns_fails_loudly():
+    bad = load_census_history().rename(columns={"sex": "Gender"})
+    with pytest.raises(ValueError, match="census history"):
+        with_census_history(to_state_csv(_raw()), bad)
+
+
+@patch("pipeline.transforms.population_opendosm.fetch_parquet")
+def test_transform_state_includes_the_census_history(mock_fetch):
+    mock_fetch.return_value = _raw()
+    out = transform_state()
+    assert len(out) == 6 + 144
+    assert out["year"].min() == 1901
