@@ -1,7 +1,10 @@
 name: Dashboard freshness check
 
-# Runs right after the weekly sync so it sees this week's data, and fails
-# (GitHub emails the repo watchers) when a live dashboard is older than its data.
+# Runs right after the weekly sync so it sees this week's data, and fails when a
+# live dashboard is older than its data or could not be verified.
+# GitHub emails a failed run to the one account the run is attributed to (for a
+# scheduled sync, whoever last edited its cron), not to repo watchers. That
+# account needs Actions email notifications switched on.
 on:
   workflow_run:
     workflows: ["Sync OpenDOSM to Google Drive"]
