@@ -23,6 +23,7 @@ from pipeline.fetchers.opendosm import fetch_parquet
 from pipeline.loaders.google_sheets import write_sheet, update_drive_file
 from pipeline.loaders.file_writer import write_csv
 from pipeline.utils.opendosm_helpers import (
+    ETHNICITY_MAP,
     clean_opendosm as _clean_opendosm,
     recode_ethnicity_for_district,
 )
@@ -36,15 +37,84 @@ OUTPUT_SHEET_ID = get_sheet_id("population_opendosm", "output")
 DRIVE_FILE_ID = get_drive_id("population_opendosm", "state_csv")
 
 
+# Layout of population_by_state_age_ethnicity_sex.csv. The Tableau workbook
+# reads that Drive file by ID and binds to these exact lowercase names, the
+# ones prep_pop_opendosm.R wrote and the data spec lists. Do not route this
+# output through clean_opendosm(): that helper renames to Age / Ethnic /
+# Gender / Year for the district tabs, which breaks the workbook's Refresh.
+STATE_CSV_COLUMNS = ["state", "sex", "age", "ethnicity", "population", "year"]
+_STATE_SOURCE_COLUMNS = ("state", "date", "sex", "age", "ethnicity", "population")
+
+
+def _total_label(values: pd.Series) -> pd.Series:
+    """Title-case, then collapse OpenDOSM's 'overall*' and 'both' codes to 'Total'."""
+    # .str keeps a missing value missing (an empty CSV cell, as R wrote it);
+    # astype(str) would turn it into the literal text "nan".
+    titled = values.str.title()
+    return titled.mask(titled.str.startswith("Overall", na=False) | (titled == "Both"), "Total")
+
+
+def to_state_csv(raw: pd.DataFrame) -> pd.DataFrame:
+    """Reshape raw population_state into the state CSV layout.
+
+    Mirrors prep_pop_opendosm.R: map the ethnicity codes, title-case sex, age
+    and ethnicity, turn 'overall' / 'both' into 'Total', and replace the date
+    with its year. Population stays in thousands, as OpenDOSM publishes it.
+    """
+    missing = [c for c in _STATE_SOURCE_COLUMNS if c not in raw.columns]
+    if missing:
+        raise ValueError(f"population_state is missing columns: {', '.join(missing)}")
+
+    dates = pd.to_datetime(raw["date"], errors="coerce")
+    if dates.isna().any():
+        # one NaT would turn the whole column into floats ("2024.0" in the CSV)
+        raise ValueError(f"population_state has {int(dates.isna().sum())} unparseable dates")
+
+    ethnicity = raw["ethnicity"].map(ETHNICITY_MAP).fillna(raw["ethnicity"])
+    return pd.DataFrame({
+        "state": raw["state"],
+        "sex": _total_label(raw["sex"]),
+        "age": _total_label(raw["age"]),
+        "ethnicity": _total_label(ethnicity),
+        "population": raw["population"],
+        "year": dates.dt.year,
+    })[STATE_CSV_COLUMNS].reset_index(drop=True)
+
+
+# Census counts for 1901 to 1957 (12 states incl. "Peninsular Malaysia", totals
+# by sex only). OpenDOSM starts in 1970, so these cannot be regenerated: the R
+# script read them from Popu_Table_3.xlsx (historical data compiled by HRH
+# Sultan Nazrin Shah) on a G: drive the pipeline cannot reach. The rows here
+# were recovered on 2026-11-22 from the extract inside the published workbook.
+# They feed the dashboard's "Show historical census count" option.
+CENSUS_HISTORY_FILE = Path(__file__).resolve().parent.parent / "data" / "population_state_pre_1970.csv"
+
+
+def load_census_history() -> pd.DataFrame:
+    """Read the pre-1970 census rows. A missing file raises: silently dropping
+    this history is how the live file lost it in July 2026."""
+    return pd.read_csv(CENSUS_HISTORY_FILE)
+
+
+def with_census_history(state_csv: pd.DataFrame, history: pd.DataFrame) -> pd.DataFrame:
+    """Append the census rows older than anything OpenDOSM covers, as R's bind_rows did."""
+    if list(history.columns) != STATE_CSV_COLUMNS:
+        raise ValueError(
+            f"census history has columns {list(history.columns)}, expected {STATE_CSV_COLUMNS}"
+        )
+    older = history[history["year"] < state_csv["year"].min()]
+    return pd.concat([state_csv, older], ignore_index=True)
+
+
 def transform_state() -> pd.DataFrame:
-    """Transform population by state from OpenDOSM."""
+    """Transform population by state from OpenDOSM, plus the pre-1970 census rows."""
     try:
         pop_state = fetch_parquet(f"{DOSM_BASE}/population_state.parquet")
     except Exception as e:
         logger.warning("Failed to fetch population_state: %s", e)
         return pd.DataFrame()
 
-    cleaned = _clean_opendosm(pop_state)
+    cleaned = with_census_history(to_state_csv(pop_state), load_census_history())
 
     logger.info("Population state transform: %d rows", len(cleaned))
     return cleaned

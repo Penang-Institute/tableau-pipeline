@@ -25,3 +25,6 @@ output/
 # version-controlled. To set up a new laptop: copy the .example to the
 # real filename and fill in the real URLs.
 docs/pi_server_sync/pi_sync_config.bat
+
+# Census history the state population CSV needs (not regenerable: see population_opendosm.py)
+!pipeline/data/population_state_pre_1970.csv
