@@ -23,6 +23,7 @@ from pipeline.fetchers.opendosm import fetch_parquet
 from pipeline.loaders.google_sheets import write_sheet, update_drive_file
 from pipeline.loaders.file_writer import write_csv
 from pipeline.utils.opendosm_helpers import (
+    ETHNICITY_MAP,
     clean_opendosm as _clean_opendosm,
     recode_ethnicity_for_district,
 )
@@ -36,6 +37,50 @@ OUTPUT_SHEET_ID = get_sheet_id("population_opendosm", "output")
 DRIVE_FILE_ID = get_drive_id("population_opendosm", "state_csv")
 
 
+# Layout of population_by_state_age_ethnicity_sex.csv. The Tableau workbook
+# reads that Drive file by ID and binds to these exact lowercase names, the
+# ones prep_pop_opendosm.R wrote and the data spec lists. Do not route this
+# output through clean_opendosm(): that helper renames to Age / Ethnic /
+# Gender / Year for the district tabs, which breaks the workbook's Refresh.
+STATE_CSV_COLUMNS = ["state", "sex", "age", "ethnicity", "population", "year"]
+_STATE_SOURCE_COLUMNS = ("state", "date", "sex", "age", "ethnicity", "population")
+
+
+def _total_label(values: pd.Series) -> pd.Series:
+    """Title-case, then collapse OpenDOSM's 'overall*' and 'both' codes to 'Total'."""
+    # .str keeps a missing value missing (an empty CSV cell, as R wrote it);
+    # astype(str) would turn it into the literal text "nan".
+    titled = values.str.title()
+    return titled.mask(titled.str.startswith("Overall", na=False) | (titled == "Both"), "Total")
+
+
+def to_state_csv(raw: pd.DataFrame) -> pd.DataFrame:
+    """Reshape raw population_state into the state CSV layout.
+
+    Mirrors prep_pop_opendosm.R: map the ethnicity codes, title-case sex, age
+    and ethnicity, turn 'overall' / 'both' into 'Total', and replace the date
+    with its year. Population stays in thousands, as OpenDOSM publishes it.
+    """
+    missing = [c for c in _STATE_SOURCE_COLUMNS if c not in raw.columns]
+    if missing:
+        raise ValueError(f"population_state is missing columns: {', '.join(missing)}")
+
+    dates = pd.to_datetime(raw["date"], errors="coerce")
+    if dates.isna().any():
+        # one NaT would turn the whole column into floats ("2024.0" in the CSV)
+        raise ValueError(f"population_state has {int(dates.isna().sum())} unparseable dates")
+
+    ethnicity = raw["ethnicity"].map(ETHNICITY_MAP).fillna(raw["ethnicity"])
+    return pd.DataFrame({
+        "state": raw["state"],
+        "sex": _total_label(raw["sex"]),
+        "age": _total_label(raw["age"]),
+        "ethnicity": _total_label(ethnicity),
+        "population": raw["population"],
+        "year": dates.dt.year,
+    })[STATE_CSV_COLUMNS].reset_index(drop=True)
+
+
 def transform_state() -> pd.DataFrame:
     """Transform population by state from OpenDOSM."""
     try:
@@ -44,7 +89,7 @@ def transform_state() -> pd.DataFrame:
         logger.warning("Failed to fetch population_state: %s", e)
         return pd.DataFrame()
 
-    cleaned = _clean_opendosm(pop_state)
+    cleaned = to_state_csv(pop_state)
 
     logger.info("Population state transform: %d rows", len(cleaned))
     return cleaned

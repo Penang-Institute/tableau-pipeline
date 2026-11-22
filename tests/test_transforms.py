@@ -855,8 +855,9 @@ class TestPopulationOpenDOSM:
 
         result = transform_state()
         assert not result.empty
-        assert "Year" in result.columns
-        assert "Ethnic" in result.columns
+        # The state CSV keeps the lowercase layout Tableau binds to; see
+        # tests/test_population_state_csv.py for the full contract.
+        assert list(result.columns) == ["state", "sex", "age", "ethnicity", "population", "year"]
 
 
 class TestPopulationEthnicity:
